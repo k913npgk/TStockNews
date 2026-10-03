@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tstocknews"
+version = "0.1.0"
+description = "Daily Taiwan stock screening and prospective price tracking"
+requires-python = ">=3.11"
+dependencies = ["truststore>=0.10; platform_system == 'Windows'"]
+
+[project.scripts]
+tstocknews = "tstocknews.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tstocknews*"]

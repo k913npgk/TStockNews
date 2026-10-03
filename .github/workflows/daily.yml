@@ -1,0 +1,140 @@
+name: Daily Taiwan stock screener
+
+on:
+  schedule:
+    - cron: '7 13 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'daily or one-time warm-up (manual; can exceed 5 minutes)'
+        type: choice
+        options: [daily, bootstrap]
+        default: daily
+      date:
+        description: 'Optional Taiwan YYYY-MM-DD; past daily dates require archived financial snapshots'
+        type: string
+      send_line:
+        description: 'Send the prepared report to LINE (default is preview only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: stock-screener-state
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore state
+        shell: bash
+        run: |
+          mkdir -p data reports
+          if git show-ref --verify --quiet refs/remotes/origin/screener-data; then
+            git archive origin/screener-data | tar -x
+          fi
+      - name: Determine intended Taiwan date
+        id: date
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+          EVENT: ${{ github.event_name }}
+          CREATED: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import os, json, urllib.request
+          from datetime import datetime, timezone, timedelta, date, time
+          value = os.environ.get('INPUT_DATE')
+          if not value:
+              url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['CREATED']}"
+              req = urllib.request.Request(url, headers={'Authorization':'Bearer '+os.environ['GH_TOKEN']})
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  run = json.load(r)
+              stamp = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+              local = stamp.astimezone(timezone(timedelta(hours=8)))
+              intended = local.date()
+              if os.environ['EVENT'] == 'schedule' and local.time() < time(21, 7):
+                  intended -= timedelta(days=1)
+              value = intended.isoformat()
+          date.fromisoformat(value)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('value='+value+'\n')
+          PY
+      - name: Unit tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Collect and screen (or manual bootstrap)
+        env:
+          MODE: ${{ inputs.mode || 'daily' }}
+          TARGET_DATE: ${{ steps.date.outputs.value }}
+        run: |
+          if [ "$MODE" = bootstrap ]; then
+            python -B -m tstocknews bootstrap --days 220 --end "$TARGET_DATE"
+          else
+            python -B -m tstocknews daily --date "$TARGET_DATE"
+            python -B -m tstocknews prepare-send --date "$TARGET_DATE"
+          fi
+      - name: Persist prepared report and retry key before sending
+        if: always()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git show-ref --verify --quiet refs/remotes/origin/screener-data; then
+            git worktree add --detach state-checkout origin/screener-data
+          else
+            git worktree add --detach state-checkout HEAD
+            git -C state-checkout switch --orphan screener-data
+          fi
+          cp -a data reports state-checkout/
+          git -C state-checkout add data reports
+          if ! git -C state-checkout diff --cached --quiet; then
+            git -C state-checkout -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Save daily screener state'
+            git -C state-checkout push origin HEAD:refs/heads/screener-data
+          fi
+      - name: LINE push
+        if: success() && inputs.mode != 'bootstrap' && (inputs.send_line == true || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true'))
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+          TARGET_DATE: ${{ steps.date.outputs.value }}
+        run: python -B -m tstocknews send --date "$TARGET_DATE"
+      - name: Save delivery result
+        if: always()
+        shell: bash
+        run: |
+          if [ -d state-checkout/.git ] || [ -f state-checkout/.git ]; then
+            cp -a data reports state-checkout/
+            git -C state-checkout add data reports
+            if ! git -C state-checkout diff --cached --quiet; then
+              git -C state-checkout -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Save delivery status'
+              git -C state-checkout push origin HEAD:refs/heads/screener-data
+            fi
+          fi
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f data/status.json ]; then cat data/status.json >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f data/error.json ]; then cat data/error.json >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screener-report-${{ github.run_id }}
+          path: |
+            reports/
+            data/status.json
+            data/error.json
+          retention-days: 7
