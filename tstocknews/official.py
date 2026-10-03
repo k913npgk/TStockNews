@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
+import html
 import math
 import re
 import time
@@ -75,6 +76,51 @@ def tables(value):
     return value.get("tables", [value])
 
 
+def _signed_price_change(direction, amount):
+    """Read an exchange-provided price change without inferring its sign."""
+    if direction is None:
+        # TPEx dailyQuotes exposes a single signed 漲跌 value.
+        text = str(amount).strip() if amount is not None else ""
+        text = text.translate(str.maketrans({"＋": "+", "－": "-", "−": "-"}))
+        if text in {"", "--", "X", "x"}:
+            return None
+        parsed = number(text)
+        if parsed is None:
+            return None
+        if parsed == 0 or text.startswith(("+", "-", "＋", "－")):
+            return parsed
+        return None
+
+    parsed = number(amount)
+    if parsed is None:
+        return None
+    # TWSE returns its sign cell as an HTML fragment such as
+    # '<p style= color:red>+</p>' instead of plain text.
+    marker = html.unescape(re.sub(r"<[^>]*>", "", str(direction))).strip()
+    marker = marker.translate(str.maketrans({"＋": "+", "－": "-", "−": "-"})).upper()
+    if marker in {"X", "--"}:
+        return None
+    if marker in {"+", "^", "＋"}:
+        return abs(parsed)
+    if marker in {"-", "V", "－", "−"}:
+        return -abs(parsed)
+    if marker == "" and parsed == 0:
+        return 0.0
+    return None
+
+
+def _price_change_pct(close, change):
+    # Official change is measured from that session's reference price, which
+    # can differ from the prior close on ex-right/ex-dividend sessions.
+    close_value = number(close)
+    if close_value is None or change is None:
+        return None
+    reference_price = close_value - change
+    if reference_price <= 0:
+        return None
+    return change / reference_price
+
+
 def quote_rows(value, market, day):
     if str(value.get("date")) != day.replace("-", ""):
         raise SourceError(f"{market} quote date mismatch: {day}")
@@ -90,9 +136,19 @@ def quote_rows(value, market, day):
             volume = number(row.get("成交股數"))
             if volume is None:
                 raise SourceError("Missing volume field")
+            if market == "twse":
+                price_change = _signed_price_change(
+                    row.get("漲跌(+/-)", row.get("漲跌註記")),
+                    row.get("漲跌價差", row.get("漲跌價")),
+                )
+            else:
+                price_change = _signed_price_change(None, row.get("漲跌"))
+            close = number(row.get(maps[3]))
             out.append({"date": day, "market": market, "symbol": row[code].strip(),
                         "name": row.get("證券名稱", row.get("名稱", "")).strip(),
                         **dict(zip(("open", "high", "low", "close"), (number(row.get(k)) for k in maps))),
+                        "price_change": price_change,
+                        "price_change_pct": _price_change_pct(close, price_change),
                         "volume_shares": int(volume)})
     if not out:
         raise SourceError(f"{market} has no quotes for expected session {day}")
