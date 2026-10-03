@@ -1,4 +1,6 @@
 {
-  "date": "2026-10-03",
-  "status": "NON_TRADING_DAY"
+  "end": "2026-10-02",
+  "imported_sessions": 150,
+  "sessions": 150,
+  "status": "BOOTSTRAP_COMPLETE"
 }
