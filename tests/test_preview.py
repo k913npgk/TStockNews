@@ -9,6 +9,7 @@ from unittest.mock import patch
 from tests.test_engine import bars, weekdays
 from tstocknews.cli import main, daily
 from tstocknews.engine import track
+from tstocknews.analysis import recommendations
 from tstocknews.preview import preview, target_session
 from tstocknews.storage import read, write
 
@@ -208,3 +209,22 @@ class PreviewTests(unittest.TestCase):
             write(source / 'recommendations' / (day + '.json'), {'test_only': True, 'signals': []})
             with self.assertRaisesRegex(ValueError, 'Test recommendations'):
                 daily(source, Path(tmp) / 'reports', day)
+
+    def test_late_snapshot_is_test_only_and_production_stays_strict(self):
+        from tstocknews.official import SourceError
+        sessions = weekdays(125)
+        day = sessions[-1]
+        financial = {'observed_date': '2026-10-03', 'universe': [{'market': 'twse', 'symbol': '2330'}],
+                     'fundamentals': [{'market': 'twse', 'symbol': '2330', 'eps': 1, 'revenue_yoy_3m': .2,
+                                       'available_date': '2026-10-03'}]}
+        with self.assertRaisesRegex(SourceError, 'Production cannot use'):
+            recommendations(day, sessions, bars(sessions=sessions), [], financial)
+
+    def test_complete_financial_source_loss_is_not_zero_qualified_stocks(self):
+        from tstocknews.official import SourceError
+        sessions = weekdays(125)
+        financial = {'observed_date': sessions[-1], 'universe': [{'market': 'twse', 'symbol': '2330'}],
+                     'fundamentals': [{'market': 'twse', 'symbol': '2330', 'eps': None,
+                                       'revenue_yoy_3m': None, 'available_date': sessions[-1]}]}
+        with self.assertRaisesRegex(SourceError, 'no usable EPS or revenue'):
+            recommendations(sessions[-1], sessions, bars(sessions=sessions), [], financial)

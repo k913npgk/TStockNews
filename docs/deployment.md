@@ -6,13 +6,15 @@
 
 單日官方行情與法人合計已核對；財報／月營收來源檢查經普通股分類後取得 1,976 檔、1,974 筆有效 EPS、1,971 筆三個月營收比率。這是來源覆蓋檢查，不是合格推薦數，也不是歷史驗證成績。實際股票範圍使用官方公司名單與 ISIN CFI=ESVUFR 普通股分類交集。
 
-公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。本地與 `screener-data` 已有 150 個交易日的行情／法人暖機；GitHub 兩個 LINE Secrets 已建立。35 項本地測試通過，包含相同輸入的正式／測試推薦一致，以及測試訊號不計入績效；隔離模式見 [測試流程](test-flow.md)。
+公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。本地與 `screener-data` 已有 150 個交易日的行情／法人暖機；GitHub 兩個 LINE Secrets 已建立。測試包含相同輸入的正式／測試推薦一致、測試訊號不計入績效，以及正式歷史分析拒用较晚財報；隔離模式見 [測試流程](test-flow.md)。
 
 2026-10-03 的 [Actions → LINE 隔離驗收](https://github.com/k913npgk/TStockNews/actions/runs/37127033209)成功：目標日回退至 2026-10-02，LINE delivery=`SENT`，兩名群組收件人、免費配額與群組存取檢查通過。正式 `screener-data` SHA 在測試前後保持 `0f4ec497f8982528ece4edae7274658f1c3bb478`；測試報告與 delivery 只存 `screener-tests`。這是資料缺漏報告的端到端發布驗收，尚未補足歷史財報，也不代表使用者已閱讀。
 
 以上是較早版本的資料不足報告驗收。使用者已授權測試使用執行日財報，現在沒有目標日快照時會取得最新財報完成五項篩選；推薦與真實取得日期獨立保存，不影響正式分析或績效。正式交易日則更新當日財報，不沿用測試結果。
 
-main 已啟用 PR 與必要 CI `unit-tests`，包含管理員；不要求額外審核人數（單人專案），但必須透過 PR 且 CI 通過。main、screener-data、screener-tests 均禁止 force push／刪除。本地 `core.hooksPath=.githooks` 已啟用。使用者已授權開啟正式自動推播：部署完成後設定 `LINE_ENABLED=true`，下個交易日預定 21:07 啟動。
+最新版 [完整推薦 Actions → LINE 驗收](https://github.com/k913npgk/TStockNews/actions/runs/37129032850)成功，`analysis_status=COMPLETE`、`SENT`：10/02 行情／法人搭配 10/03 財報，推薦 1313 聯成與 6266 泰詠，下一交易日依官方日曆為 2026-10-05。暖機使用 120 個交易日；財報範圍 1,976 檔，其中有效 EPS 1,974、三個月營收 1,971。四個官方行情／法人來源也於 10/03 重新抓取成功。正式資料分支 SHA 在測試前後保持不變。
+
+main 已啟用 PR 與必要 CI `unit-tests`，包含管理員；不要求額外審核人數（單人專案），但必須透過 PR 且 CI 通過。main、screener-data、screener-tests 均禁止 force push／刪除。本地 `core.hooksPath=.githooks` 已啟用。使用者已授權開啟正式自動推播：部署完成後設定 `LINE_ENABLED=true`，2026-10-05 台灣時間 21:07 預定啟動，先更新 10/05 當日行情／法人與財報，再產生正式推薦及發送；不會將 10/02 測試推薦搬入正式資料。
 
 ## 本地暖機（使用者執行）
 
