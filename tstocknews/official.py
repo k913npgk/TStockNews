@@ -13,6 +13,16 @@ from .network import tls_context
 
 TAIPEI = timezone(timedelta(hours=8))
 
+# Confirmed exceptional closures absent from the annual holiday schedule.
+# Keep evidence with the date; missing quotes alone never establish a closure.
+KNOWN_EXTRA_CLOSURES = {
+    "2026-07-10": "https://www.emega.com.tw/emegaTran/bulletin.do?id=20260709085742643431",
+}
+
+
+def extra_closures(root):
+    return {**KNOWN_EXTRA_CLOSURES, **read(root / "extra_closures.json", {})}
+
 
 def today():
     return datetime.now(TAIPEI).date()
@@ -297,7 +307,7 @@ def universe_and_financials(client, as_of):
 
 def sync(root, start, end, progress=None):
     client = Client(root)
-    closures = read(root / "extra_closures.json", {})  # ISO day -> official evidence URL
+    closures = extra_closures(root)  # ISO day -> evidence URL
     calendars = {year: holiday_days(client, year) for year in
                  range(date.fromisoformat(start).year, date.fromisoformat(end).year + 1)}
     allowed = {(r["market"], r["symbol"]) for r in ordinary_universe(client)}

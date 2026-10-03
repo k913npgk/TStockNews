@@ -7,7 +7,7 @@ def pct(value):
     return "尚無結果" if value is None else f"{value:+.2%}"
 
 
-def render(day, result, performance, strategy):
+def render(day, result, performance, strategy, include_performance=True):
     lines = [f"台股每日篩選｜{day}", f"策略：{strategy}；五項全部通過",
              "規則排名；起漲機率尚未驗證。價格績效不含成本與股息。",
              "技術指標使用官方未還原日價格；除權息可能影響訊號。", ""]
@@ -26,6 +26,11 @@ def render(day, result, performance, strategy):
         lines.append(f"   K/D {row['kd_k']:.2f}/{row['kd_d']:.2f}；DIF/DEA {row['macd_dif']:.3f}/{row['macd_dea']:.3f}")
     if not candidates:
         lines.append("今日沒有符合全部條件的股票。")
+    if not include_performance:
+        lines += ["", "測試不建立推薦追蹤，不計算任何測試績效。",
+                  "資料品質／篩選摘要：", str(result.get("diagnostics", {}).get("exclusion_counts", {})),
+                  "現金流來源尚未接入；利潤率觀察欄位見每日財報快照。"]
+        return "\n".join(lines) + "\n"
     lines += ["", "歷次推薦績效｜下一交易日開盤為基準"]
     for h in (1, 3, 5, 10, 20):
         rows = [r for r in performance if r["horizon"] == h]

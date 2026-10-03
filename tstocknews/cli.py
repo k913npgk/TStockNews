@@ -8,7 +8,7 @@ import sys
 from . import STRATEGY_VERSION
 from .engine import screen, track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
-from .official import Client, SourceError, holiday_days, sync, today, universe_and_financials
+from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
 
@@ -26,7 +26,7 @@ def load_history(root):
 def daily(root, report_root, day):
     if day > today().isoformat():
         raise ValueError("Cannot run a future date")
-    closures = read(root / "extra_closures.json", {})
+    closures = extra_closures(root)
     if date.fromisoformat(day).weekday() >= 5 or day in closures:
         write(root / "status.json", {"date": day, "status": "NON_TRADING_DAY"})
         return {"date": day, "status": "NON_TRADING_DAY"}
@@ -106,20 +106,37 @@ def main(argv=None):
     for name in ("daily", "prepare-send", "send"):
         p = sub.add_parser(name)
         p.add_argument("--date", default=None)
+        if name == "send":
+            p.add_argument("--require-sent", action="store_true", help="Fail Actions if delivery was blocked")
+    test = sub.add_parser("test-report", help="Isolated Actions/LINE preview; never creates production signals")
+    test.add_argument("--date", default=None)
+    test.add_argument("--run-id", required=True)
+    test.add_argument("--test-dir", default="test-runs")
     args = parser.parse_args(argv)
     root, reports = Path(args.data_dir), Path(args.report_dir)
-    root.mkdir(parents=True, exist_ok=True)
+    if args.command != "test-report":
+        root.mkdir(parents=True, exist_ok=True)
     day = getattr(args, "date", None) or today().isoformat()
+    bootstrap_status = None
     try:
-        if args.command == "bootstrap":
+        if args.command == "test-report":
+            from .preview import preview
+            output = preview(root, Path(args.test_dir), args.run_id, day)
+        elif args.command == "bootstrap":
             end = args.end or today().isoformat()
             if end > today().isoformat() or args.days < 1:
                 raise ValueError("Invalid bootstrap range")
             start = (date.fromisoformat(end) - timedelta(days=args.days)).isoformat()
+            previous = read(root / "status.json", {})
+            last_completed = previous.get("last_completed") if (
+                previous.get("start") == start and previous.get("end") == end) else None
+            bootstrap_status = {"status": "BOOTSTRAPPING", "last_completed": last_completed,
+                                "start": start, "end": end}
+            write(root / "status.json", bootstrap_status)
             def progress(collected):
-                status = {"status": "BOOTSTRAPPING", "last_completed": collected, "start": start, "end": end}
-                write(root / "status.json", status)
-                print(json.dumps(status), flush=True)
+                bootstrap_status["last_completed"] = collected
+                write(root / "status.json", bootstrap_status)
+                print(json.dumps(bootstrap_status), flush=True)
             sync(root, start, end, progress)
             sessions, _, _ = load_history(root)
             output = {"status": "BOOTSTRAP_COMPLETE", "sessions": len(sessions), "end": end}
@@ -139,13 +156,22 @@ def main(argv=None):
                 output = {"status": delivery["status"]}
         else:
             output = push(root, reports, day)
+            if args.require_sent and output["status"] != "SENT":
+                print(json.dumps(output, ensure_ascii=False))
+                return 1
         print(json.dumps(output, ensure_ascii=False))
-        error_path = root / "error.json"
+        error_path = (Path(args.test_dir) / args.run_id / "error.json") if args.command == "test-report" else root / "error.json"
         if error_path.exists():
             error_path.unlink()
         return 0
     except Exception as error:
         # Source errors only include official URLs; LINE errors do not disclose token/group.
-        write(root / "error.json", {"date": day, "type": type(error).__name__, "message": str(error)})
+        detail = {"date": day, "type": type(error).__name__, "message": str(error)}
+        # A failed preview must not create/overwrite the production error/status files.
+        if args.command != "test-report":
+            write(root / "error.json", detail)
+        if args.command == "bootstrap":
+            write(root / "status.json", {**(bootstrap_status or {}),
+                                         "status": "BOOTSTRAP_FAILED", "error": detail})
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         return 1

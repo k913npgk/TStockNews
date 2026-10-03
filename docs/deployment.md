@@ -6,7 +6,7 @@
 
 單日官方行情與法人合計已核對；財報／月營收來源檢查經普通股分類後取得 1,976 檔、1,974 筆有效 EPS、1,971 筆三個月營收比率。這是來源覆蓋檢查，不是合格推薦數，也不是歷史驗證成績。實際股票範圍使用官方公司名單與 ISIN CFI=ESVUFR 普通股分類交集。
 
-公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。19 項測試在本地與 Linux Actions 通過；[2026-10-03 非交易日短版執行](https://github.com/k913npgk/TStockNews/actions/runs/37121041985)成功保存 screener-data 分支。此結果只驗證雲端測試、非交易日流程與持久化，尚未完成歷史暖機、完整交易日雲端流程或 LINE 真實群組發送，因此尚不能稱為正式上線。
+公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。本地與 `screener-data` 已有 150 個交易日的行情／法人暖機；GitHub 兩個 LINE Secrets 已建立。31 項本地測試通過；可重複使用的隔離模式見 [測試流程](test-flow.md)。2026-10-02 缺少同期財報快照，完整交易日五項篩選驗收尚待完成；正式自動推播保持關閉。
 
 ## 本地暖機（使用者執行）
 
@@ -27,7 +27,7 @@ Get-Content bootstrap.log -Tail 10
 (Get-ChildItem data/days/*.json.gz).Count
 ```
 
-`BOOTSTRAPPING` 表示尚在收集；`last_completed` 為最後完整保存的交易日。`BOOTSTRAP_COMPLETE` 表示指定範圍完成；sessions 至少 120 才具備技術暖機長度。失敗時看 log 或 `data/error.json`；同一指令可以略過已完成交易日續跑。
+`BOOTSTRAPPING` 表示尚在收集；`last_completed` 為最後完整保存的交易日。`BOOTSTRAP_COMPLETE` 表示指定範圍完成；sessions 至少 120 才具備技術暖機長度。失敗會寫入 `BOOTSTRAP_FAILED` 並保留已完成進度，原因見狀態中的 `error`、log 或 `data/error.json`；同一指令可以略過已完成交易日續跑。
 
 日常執行：
 
@@ -89,7 +89,7 @@ python -B -m tstocknews send
 - 利潤率可由最新損益資料觀察；現金流來源尚未接入，明確存為 null／SOURCE_NOT_IMPLEMENTED。這兩者不是第一版硬門檻。
 - EPS 与月營收 snapshot 的 available_date 是首次取得日，不是財報期間，也不是出表日期；不聲稱歷史公告時間已重建。
 - 官方最新公司範圍用于技術暖機；沒有歷史完整 universe，不能據此宣稱已做過無存活偏誤回測。
-- 年度假日表排除假日；臨時休市若官方年表尚未更新，程序會因預定交易日資料缺漏而停止。可在 `data/extra_closures.json` 以 ISO 日期對應官方公告網址，明確補充，不會自行把缺資料當成休市。
+- 年度假日表排除假日；程式另內建已確認的臨時休市日與公告來源，本機及雲端共用。目前包含 [2026-07-10 巴威颱風全日休市（兆豐證券公告）](https://www.emega.com.tw/emegaTran/bulletin.do?id=20260709085742643431)。其他臨時休市可在 `data/extra_closures.json` 以 ISO 日期對應官方公告網址補充；尚未確認的預定交易日資料缺漏仍會停止，不會自行把缺資料當成休市。
 - 開盤價只是價格觀察基準，沒有撮合、漲停成交或滑價模擬；不含手續費、稅與股息。
 - 目前只有單一個股訊號績效，未完成市場基準配對或校準機率模型。10 日達標比率不是每檔股票的預測機率。
 
