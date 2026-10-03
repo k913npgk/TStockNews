@@ -2,7 +2,9 @@
 
 目標：每天台灣時間 21:07 由 GitHub Actions 收集公開資料，篩選可能轉強的台灣股票，產生最多 10 檔的報告，透過 LINE Messaging API 發送到群組，並追蹤 1／3／5／10／20 個交易日後的表現。
 
-目前狀態：第一版程式與 GitHub Actions workflow 已建立，19 項測試通過；官方單日行情／法人及財報／三個月營收來源已做小量驗證。尚未完成全歷史暖機、GitHub 雲端每日流程驗收與真實 LINE 群組發送。
+公開專案：[k913npgk/TStockNews](https://github.com/k913npgk/TStockNews)。
+
+目前狀態：第一版程式與排程已發布，19 項測試通過；官方單日行情／法人及財報／三個月營收來源已做小量驗證。[雲端非交易日驗證](https://github.com/k913npgk/TStockNews/actions/runs/37121041985)通過，資料分支持久化成功。尚未完成全歷史暖機、完整交易日雲端驗收與真實 LINE 群組發送；LINE 自動推播尚未啟用。
 
 已確認：上市＋上櫃普通股、五項條件全部通過、不足 10 檔不補、LINE 群組 2 人；採用下列門檻與交易日績效定義。
 
@@ -47,9 +49,8 @@ GitHub 與 LINE 設定、長批次查核方式及實作限制見 [部署指南](
 
 ## 尚需設定
 
-1. GitHub repository 網址與公開／私人設定。
-2. LINE 官方帳號、Bot 加群、Group ID 與 GitHub Secrets。
-3. 手動完成一次性歷史暖機，再驗證雲端報告及實際發送。
+1. LINE 官方帳號、Bot 加群、Group ID 與 GitHub Secrets。
+2. 手動完成一次性歷史暖機，再驗證雲端報告及實際發送。
 
 ## 實作順序
 

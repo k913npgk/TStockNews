@@ -6,7 +6,7 @@
 
 單日官方行情與法人合計已核對；財報／月營收來源檢查經普通股分類後取得 1,976 檔、1,974 筆有效 EPS、1,971 筆三個月營收比率。這是來源覆蓋檢查，不是合格推薦數，也不是歷史驗證成績。實際股票範圍使用官方公司名單與 ISIN CFI=ESVUFR 普通股分類交集。
 
-尚未完成歷史暖機、GitHub 實際執行或 LINE 真實群組發送，因此尚不能稱為正式上線。
+公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。19 項測試在本地與 Linux Actions 通過；[2026-10-03 非交易日短版執行](https://github.com/k913npgk/TStockNews/actions/runs/37121041985)成功保存 screener-data 分支。此結果只驗證雲端測試、非交易日流程與持久化，尚未完成歷史暖機、完整交易日雲端流程或 LINE 真實群組發送，因此尚不能稱為正式上線。
 
 ## 本地暖機（使用者執行）
 
