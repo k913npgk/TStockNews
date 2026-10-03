@@ -6,7 +6,8 @@ from pathlib import Path
 import sys
 
 from . import STRATEGY_VERSION
-from .engine import screen, track, MIN_HISTORY_SESSIONS
+from .analysis import recommendations
+from .engine import track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
 from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
 from .report import render
@@ -49,21 +50,19 @@ def daily(root, report_root, day):
         financial = universe_and_financials(Client(root), day)
         write(snapshot_path, financial)
     financial = read(snapshot_path)
-    fundamentals = financial["fundamentals"]
     result_path = root / "recommendations" / (day + ".json")
     result = read(result_path)
+    if result and (result.get("test_only") or result.get("excluded_from_performance")):
+        raise ValueError("Test recommendations cannot be reused by the production pipeline")
     if result is None:
-        result = screen(day, sessions, financial["universe"], prices, fundamentals, institutions)
-        result["strategy_version"] = STRATEGY_VERSION
-        result["data_hash"] = digest({"history": prices, "financial": financial})
-        result["signals"] = [{"signal_id": f"{STRATEGY_VERSION}:{day}:{r['market']}:{r['symbol']}",
-                              "date": day, "rank": i, "strategy_version": STRATEGY_VERSION,
-                              **r} for i, r in enumerate(result["candidates"], 1)]
+        result = recommendations(day, sessions, prices, institutions, financial)
         write(result_path, result)
     signals = []
     for path in sorted((root / "recommendations").glob("*.json")):
         if path.stem <= day:
-            signals.extend(read(path)["signals"])
+            saved = read(path)
+            if not saved.get("test_only") and not saved.get("excluded_from_performance"):
+                signals.extend(saved["signals"])
     performance = track(signals, sessions, prices, day)
     write(root / "performance" / (day + ".json"), performance)
     report_root.mkdir(parents=True, exist_ok=True)
@@ -108,6 +107,8 @@ def main(argv=None):
         p.add_argument("--date", default=None)
         if name == "send":
             p.add_argument("--require-sent", action="store_true", help="Fail Actions if delivery was blocked")
+        if name == "daily":
+            p.add_argument("--require-report", action="store_true", help="Fail trading-day runs without a ready report")
     test = sub.add_parser("test-report", help="Isolated Actions/LINE preview; never creates production signals")
     test.add_argument("--date", default=None)
     test.add_argument("--run-id", required=True)
@@ -143,6 +144,9 @@ def main(argv=None):
             write(root / "status.json", output)
         elif args.command == "daily":
             output = daily(root, reports, day)
+            if args.require_report and output["status"] not in ("REPORT_READY", "NON_TRADING_DAY"):
+                print(json.dumps(output, ensure_ascii=False))
+                return 1
         elif args.command == "prepare-send":
             path = reports / (day + ".md")
             if not path.exists():

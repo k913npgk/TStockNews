@@ -85,6 +85,7 @@ def screen(
     prices: list[dict[str, Any]],
     fundamentals: list[dict[str, Any]],
     institutional: list[dict[str, Any]],
+    *, fundamental_as_of: str | None = None,
 ) -> dict[str, Any]:
     """Apply all v1 gates and return at most ten ranked candidates.
 
@@ -93,10 +94,13 @@ def screen(
     `available_date`.
     """
     _date(as_of)
+    financial_cutoff = fundamental_as_of or as_of
+    _date(financial_cutoff)
     ordered_sessions = sorted({s for s in sessions if s <= as_of})
     session_set = set(ordered_sessions)
     diagnostics: dict[str, Any] = {
         "as_of": as_of,
+        "fundamental_as_of": financial_cutoff,
         "calendar_sessions_available": len(ordered_sessions),
         "minimum_history_sessions": MIN_HISTORY_SESSIONS,
         "universe_count": len(universe),
@@ -117,7 +121,7 @@ def screen(
     fundamentals_map: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in fundamentals:
         available = row.get("available_date")
-        if available and available <= as_of:
+        if available and available <= financial_cutoff:
             fundamentals_map[_row_key(row)].append(row)
     for rows in fundamentals_map.values():
         rows.sort(key=lambda r: (r.get("available_date", ""), r.get("fiscal_period", "")))
@@ -265,6 +269,8 @@ def track(
 
     result: list[dict[str, Any]] = []
     for signal in sorted(signals, key=lambda s: (s.get("date", ""), s.get("market", ""), s.get("symbol", ""), str(s.get("signal_id", "")))):
+        if signal.get("test_only") or signal.get("excluded_from_performance"):
+            continue
         sig_date = signal["date"]
         base = {"signal_id": signal.get("signal_id"), "date": sig_date, "symbol": signal["symbol"], "market": signal["market"]}
         entry = {"date": None, "open": None}

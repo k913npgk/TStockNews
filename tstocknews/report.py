@@ -27,7 +27,7 @@ def render(day, result, performance, strategy, include_performance=True):
     if not candidates:
         lines.append("今日沒有符合全部條件的股票。")
     if not include_performance:
-        lines += ["", "測試不建立推薦追蹤，不計算任何測試績效。",
+        lines += ["", "測試推薦獨立保存，不計算任何測試績效。",
                   "資料品質／篩選摘要：", str(result.get("diagnostics", {}).get("exclusion_counts", {})),
                   "現金流來源尚未接入；利潤率觀察欄位見每日財報快照。"]
         return "\n".join(lines) + "\n"
