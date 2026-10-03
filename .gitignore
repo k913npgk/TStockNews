@@ -7,3 +7,9 @@ reports/
 *.egg-info/
 build/
 dist/
+test-runs/
+preview-source/
+test-state/
+state-checkout/
+warmup-state/
+*.log

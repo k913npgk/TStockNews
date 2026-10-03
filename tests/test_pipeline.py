@@ -1,12 +1,14 @@
+import io
 import os
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from tstocknews.cli import daily, push
+from tstocknews.cli import daily, main, push
 from tstocknews.line import prepare, send
-from tstocknews.official import SourceError, RevenueTable, inst_rows, quote_rows, month_offset
+from tstocknews.official import SourceError, RevenueTable, inst_rows, quote_rows, month_offset, sync
 from tstocknews.storage import read, write
 from tests.test_engine import weekdays, bars
 
@@ -86,6 +88,67 @@ class LineTests(unittest.TestCase):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_known_typhoon_closure_does_not_fetch_or_publish(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("tstocknews.cli.Client") as client:
+            root = Path(tmp) / "data"
+            status = daily(root, Path(tmp) / "reports", "2026-07-10")
+            self.assertEqual(status["status"], "NON_TRADING_DAY")
+            client.assert_not_called()
+            self.assertFalse((root / "recommendations").exists())
+
+    def test_sync_resumes_cached_day_and_skips_confirmed_closures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            saved = {"date": "2026-07-09", "prices": [], "institutional": []}
+            write(root / "days" / "2026-07-09.json.gz", saved)
+            write(root / "extra_closures.json", {"2026-07-14": "https://example.org/closure"})
+            collected = {"date": "2026-07-13", "prices": [], "institutional": []}
+            with patch("tstocknews.official.holiday_days", return_value=set()), \
+                 patch("tstocknews.official.ordinary_universe", return_value=[]), \
+                 patch("tstocknews.official.collect_day", return_value=collected) as collect:
+                sync(root, "2026-07-09", "2026-07-14")
+                self.assertEqual([call.args[1] for call in collect.call_args_list], ["2026-07-13"])
+            self.assertEqual(read(root / "days" / "2026-07-09.json.gz"), saved)
+            self.assertFalse((root / "days" / "2026-07-10.json.gz").exists())
+            self.assertFalse((root / "days" / "2026-07-14.json.gz").exists())
+
+    def test_unconfirmed_missing_session_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tstocknews.official.holiday_days", return_value=set()), \
+             patch("tstocknews.official.ordinary_universe", return_value=[]), \
+             patch("tstocknews.official.collect_day", side_effect=SourceError("missing quotes")):
+            root = Path(tmp)
+            with self.assertRaises(SourceError):
+                sync(root, "2026-07-13", "2026-07-13")
+            self.assertFalse((root / "days" / "2026-07-13.json.gz").exists())
+
+    def test_bootstrap_failure_keeps_checkpoint_and_can_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def partial_sync(root, start, end, progress):
+                write(root / "days" / "2026-07-09.json.gz",
+                      {"date": "2026-07-09", "prices": [], "institutional": []})
+                progress("2026-07-09")
+                raise SourceError("missing quotes for 2026-07-13")
+            argv = ["--data-dir", str(root), "bootstrap", "--days", "4", "--end", "2026-07-13"]
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with patch("tstocknews.cli.sync", side_effect=partial_sync):
+                    self.assertEqual(main(argv), 1)
+                status = read(root / "status.json")
+                self.assertEqual(status["status"], "BOOTSTRAP_FAILED")
+                self.assertEqual(status["last_completed"], "2026-07-09")
+                self.assertEqual(status["start"], "2026-07-09")
+                self.assertEqual(status["end"], "2026-07-13")
+                self.assertEqual(status["error"], read(root / "error.json"))
+                # Failure before any new progress must retain the earlier checkpoint.
+                with patch("tstocknews.cli.sync", side_effect=SourceError("still missing")):
+                    self.assertEqual(main(argv), 1)
+                self.assertEqual(read(root / "status.json")["last_completed"], "2026-07-09")
+                with patch("tstocknews.cli.sync"):
+                    self.assertEqual(main(argv), 0)
+                self.assertEqual(read(root / "status.json")["status"], "BOOTSTRAP_COMPLETE")
+                self.assertFalse((root / "error.json").exists())
+
     def test_atomic_gzip_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "day.json.gz"

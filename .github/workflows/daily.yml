@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'daily or one-time warm-up (manual; can exceed 5 minutes)'
+        description: 'daily / warm-up / isolated test (previous trading day on holidays)'
         type: choice
-        options: [daily, bootstrap]
+        options: [daily, bootstrap, test]
         default: daily
       date:
-        description: 'Optional Taiwan YYYY-MM-DD; past daily dates require archived financial snapshots'
+        description: 'Taiwan YYYY-MM-DD; test resolves holidays to previous session; no future financial backfill'
         type: string
       send_line:
         description: 'Send the prepared report to LINE (default is preview only)'
@@ -28,6 +28,7 @@ concurrency:
 
 jobs:
   run:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'test'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -133,8 +134,84 @@ jobs:
         if: always()
         with:
           name: screener-report-${{ github.run_id }}
+          overwrite: true
           path: |
             reports/
             data/status.json
             data/error.json
+          retention-days: 7
+
+  test:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      TEST_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Restore read-only production inputs and isolated test retries
+        shell: bash
+        run: |
+          mkdir -p preview-source test-runs
+          if git show-ref --verify --quiet refs/remotes/origin/screener-data; then
+            git archive origin/screener-data data | tar -x -C preview-source
+          fi
+          if git show-ref --verify --quiet refs/remotes/origin/screener-tests; then
+            git archive origin/screener-tests test-runs | tar -x
+          fi
+      - name: Generate isolated report
+        id: preview
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$INPUT_DATE" ]; then
+            CREATED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')
+            INPUT_DATE=$(python -c 'import sys; from datetime import datetime,timezone,timedelta; print(datetime.fromisoformat(sys.argv[1].replace("Z","+00:00")).astimezone(timezone(timedelta(hours=8))).date())' "$CREATED")
+          fi
+          python -B -m tstocknews --data-dir preview-source/data test-report --date "$INPUT_DATE" --run-id "$TEST_ID"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          manifest = json.loads((Path('test-runs') / os.environ['TEST_ID'] / 'manifest.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('target='+manifest['target_date']+'\n')
+          PY
+      - name: Prepare isolated delivery
+        env:
+          TARGET_DATE: ${{ steps.preview.outputs.target }}
+        run: python -B -m tstocknews --data-dir "test-runs/$TEST_ID/data" --report-dir "test-runs/$TEST_ID/reports" prepare-send --date "$TARGET_DATE"
+      - name: Persist test report and retry key before LINE push
+        run: bash scripts/persist-tests.sh
+      - name: LINE test push
+        if: inputs.send_line == true
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+          TARGET_DATE: ${{ steps.preview.outputs.target }}
+        run: python -B -m tstocknews --data-dir "test-runs/$TEST_ID/data" --report-dir "test-runs/$TEST_ID/reports" send --date "$TARGET_DATE" --require-sent
+      - name: Persist test delivery result
+        if: always() && steps.preview.outcome == 'success'
+        run: bash scripts/persist-tests.sh
+      - name: Test summary
+        if: always()
+        run: |
+          if [ -f "test-runs/$TEST_ID/manifest.json" ]; then cat "test-runs/$TEST_ID/manifest.json" >> "$GITHUB_STEP_SUMMARY"; fi
+          for path in test-runs/"$TEST_ID"/data/delivery/*.json; do
+            if [ -f "$path" ]; then cat "$path" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-test-${{ github.run_id }}
+          overwrite: true
+          path: test-runs/${{ github.run_id }}/
           retention-days: 7
