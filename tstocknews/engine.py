@@ -227,6 +227,8 @@ def screen(
         candidates.append({
             "symbol": symbol, "market": market, "name": company.get("name", ""),
             "as_of": as_of, "close": float(streak[-1]["close"]),
+            "price_change": _float(streak[-1].get("price_change")),
+            "price_change_pct": _float(streak[-1].get("price_change_pct")),
             "volume_shares": volume, "eps": eps, "revenue_yoy_3m": revenue,
             "fundamental_available_date": fund.get("available_date") if fund else None,
             "fiscal_period": fund.get("fiscal_period") if fund else None,

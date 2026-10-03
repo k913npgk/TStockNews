@@ -7,7 +7,7 @@ import shutil
 from . import STRATEGY_VERSION
 from .analysis import recommendations
 from .engine import MIN_HISTORY_SESSIONS
-from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
+from .official import Client, SourceError, extra_closures, holiday_days, quote_rows, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
 
@@ -27,6 +27,32 @@ def target_session(root, requested):
             return day
         current -= timedelta(days=1)
     raise SourceError("No official trading session found within 370 days")
+
+
+def enrich_daily_changes(data, target):
+    """Add missing official display fields only to this run's copied quotes."""
+    path = data / "days" / (target + ".json.gz")
+    saved = read(path)
+    if saved is None or all("price_change" in row and "price_change_pct" in row for row in saved["prices"]):
+        return
+    client, official = Client(data), {}
+    for market, base, query in (
+        ("twse", "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX",
+         {"date": target.replace("-", ""), "type": "ALLBUT0999", "response": "json"}),
+        ("tpex", "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes",
+         {"date": target.replace("-", "/"), "response": "json"}),
+    ):
+        official.update({(row["market"], row["symbol"]): row
+                         for row in quote_rows(client.json(base, **query), market, target)})
+    for row in saved["prices"]:
+        fresh = official.get((row["market"], row["symbol"]))
+        if fresh is None or any(row.get(key) != fresh.get(key)
+                                for key in ("open", "high", "low", "close", "volume_shares")):
+            raise SourceError("Official target-day quotes conflict with the cached market snapshot")
+        if "price_change" not in row or "price_change_pct" not in row:
+            row.update(price_change=fresh["price_change"], price_change_pct=fresh["price_change_pct"])
+    saved["source_audit"] = saved.get("source_audit", []) + client.audit
+    write(path, saved)
 
 
 def preview(source, runs, run_id, requested):
@@ -64,6 +90,7 @@ def preview(source, runs, run_id, requested):
     start = (date.fromisoformat(available[-1].name[:10]) + timedelta(days=1)).isoformat() if available else target
     if start <= target:
         sync(data, start, target)
+    enrich_daily_changes(data, target)
     sessions, prices, institutions = [], [], []
     for path in sorted((data / "days").glob("*.json.gz")):
         value = read(path)
@@ -120,22 +147,20 @@ def preview(source, runs, run_id, requested):
         result = recommendations(target, sessions, prices, institutions, financial, test_run_id=run_id)
         write(data / "recommendations" / (target + ".json"), result)
         write(root / "screen.json", result)
-    header = [f"【測試報告｜不計入績效】台股篩選｜{target}",
-              f"執行指定日：{requested}；目標交易日：{target}；測試編號：{run_id}",
-              f"行情／法人截至：{target}；財報／營收快照取得日：{observed}。",
-              f"推薦觀察的下一交易日：{next_day}。",
-              "本次建立獨立測試推薦；不計入績效、不改寫正式分析。",
-              *( ["使用執行時財報搭配目標日行情，供下一交易日檢視；不是目標日當時資訊的歷史重現。"] if observed > target else []), ""]
+    header = ["【測試報告｜不計入績效】", f"執行指定日：{requested}",
+              f"行情／法人截至：{target}", f"財報／營收快照取得日：{observed}",
+              f"下一交易日：{next_day}",
+              *( ["本次使用較晚取得的財報，", "不是目標日當時資訊的歷史重現。"] if observed > target else []), ""]
     if result is not None:
         body = render(target, result, [], STRATEGY_VERSION, include_performance=False)
     else:
         target_prices = [row for row in prices if row["date"] == target]
-        body = ("資料不足，無法完成五項篩選；合格檔數未知，不能解釋為零檔合格。\n"
-                f"截至目標日行情／法人暖機：{len(sessions)}／{MIN_HISTORY_SESSIONS} 個交易日。\n"
-                f"目標日行情：上市 {sum(r['market'] == 'twse' for r in target_prices)} 檔；"
-                f"上櫃 {sum(r['market'] == 'tpex' for r in target_prices)} 檔。\n"
-                + ("缺少目標日以前已保存的財報／營收快照；未使用較晚取得的資料回填。\n" if financial is None else "")
-                + "資料狀態：" + ", ".join(warnings) + "\n")
+        body = ("資料不足，尚無法完成篩選。\n"
+                "符合檔數未知，不代表沒有股票符合條件。\n"
+                f"已準備 {len(sessions)}／{MIN_HISTORY_SESSIONS} 個交易日資料。\n"
+                f"上市行情：{sum(r['market'] == 'twse' for r in target_prices)} 檔\n"
+                f"上櫃行情：{sum(r['market'] == 'tpex' for r in target_prices)} 檔\n"
+                + ("缺少可用的財報與營收資料。\n" if financial is None else ""))
     text = "\n".join(header) + body
     reports = root / "reports"
     reports.mkdir(parents=True, exist_ok=True)

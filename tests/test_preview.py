@@ -10,7 +10,7 @@ from tests.test_engine import bars, weekdays
 from tstocknews.cli import main, daily
 from tstocknews.engine import track
 from tstocknews.analysis import recommendations
-from tstocknews.preview import preview, target_session
+from tstocknews.preview import enrich_daily_changes, preview, target_session
 from tstocknews.storage import read, write
 
 
@@ -19,10 +19,49 @@ def files(root):
 
 
 class PreviewTests(unittest.TestCase):
+    def test_legacy_quote_enrichment_uses_official_target_day_and_keeps_source_immutable(self):
+        from tstocknews.official import SourceError
+        with tempfile.TemporaryDirectory() as tmp:
+            source, isolated = Path(tmp) / 'source', Path(tmp) / 'isolated'
+            day = '2026-10-02'
+            cached = {'date': day, 'prices': [{'date': day, 'market': 'twse', 'symbol': '0001',
+                      'name': '示例', 'open': 123, 'high': 126, 'low': 122, 'close': 125.5,
+                      'volume_shares': 1000}], 'institutional': [], 'source_audit': []}
+            path = Path('days') / (day + '.json.gz')
+            write(source / path, cached)
+            write(isolated / path, cached)
+            before = files(source)
+            twse = {'date': '20261002', 'fields': ['證券代號', '證券名稱', '成交股數',
+                    '開盤價', '最高價', '最低價', '收盤價', '漲跌(+/-)', '漲跌價差'],
+                    'data': [['0001', '示例', '1000', '123', '126', '122', '125.5', '+', '2.5']]}
+            tpex = {'date': '20261002', 'fields': ['代號', '名稱', '成交股數', '開盤',
+                    '最高', '最低', '收盤', '漲跌'],
+                    'data': [['0002', '示例二', '1000', '10', '11', '9', '10', '0.00']]}
+            with patch('tstocknews.preview.Client.json', side_effect=[twse, tpex]) as fetch:
+                enrich_daily_changes(isolated, day)
+            self.assertEqual([c.kwargs['date'] for c in fetch.call_args_list], ['20261002', '2026/10/02'])
+            enriched = read(isolated / path)
+            self.assertEqual(enriched['prices'][0]['price_change'], 2.5)
+            self.assertAlmostEqual(enriched['prices'][0]['price_change_pct'], 2.5 / 123)
+            self.assertEqual(enriched['institutional'], cached['institutional'])
+            self.assertEqual(files(source), before)
+            with patch('tstocknews.preview.Client.json', side_effect=AssertionError('already enriched')):
+                enrich_daily_changes(isolated, day)
+            # A changed official close must not revise the copied screening inputs.
+            write(isolated / path, cached)
+            unchanged = (isolated / path).read_bytes()
+            twse['data'][0][6] = '126'
+            with patch('tstocknews.preview.Client.json', side_effect=[twse, tpex]):
+                with self.assertRaisesRegex(SourceError, 'conflict'):
+                    enrich_daily_changes(isolated, day)
+            self.assertEqual((isolated / path).read_bytes(), unchanged)
+            self.assertEqual(files(source), before)
+
     def seed(self, root, financial=True):
         sessions = weekdays(125)
         day = sessions[-1]
         for px in bars(sessions=sessions):
+            px.update(price_change=None, price_change_pct=None)
             write(root / 'days' / (px['date'] + '.json.gz'),
                   {'date': px['date'], 'prices': [px], 'institutional': [
                       {'date': px['date'], 'market': 'twse', 'symbol': '2330', 'net_buy_shares': 10000}]})
@@ -70,7 +109,7 @@ class PreviewTests(unittest.TestCase):
             self.assertFalse((runs / 'run-1/data/performance').exists())
             text = (runs / 'run-1/reports' / (day + '.md')).read_text(encoding='utf-8')
             self.assertIn('【測試報告｜不計入績效】', text)
-            self.assertNotIn('歷次推薦績效', text)
+            self.assertNotIn('歷次入選表現', text)
             with patch('tstocknews.preview.target_session', side_effect=AssertionError('must reuse')):
                 self.assertEqual(preview(source, runs, 'run-1', day), result)
             with self.assertRaises(ValueError):
