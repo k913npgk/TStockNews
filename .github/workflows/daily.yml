@@ -134,6 +134,7 @@ jobs:
         if: always()
         with:
           name: screener-report-${{ github.run_id }}
+          overwrite: true
           path: |
             reports/
             data/status.json
@@ -211,5 +212,6 @@ jobs:
         if: always()
         with:
           name: isolated-test-${{ github.run_id }}
+          overwrite: true
           path: test-runs/${{ github.run_id }}/
           retention-days: 7

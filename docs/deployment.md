@@ -8,6 +8,10 @@
 
 公開 repository 已建立：[TStockNews](https://github.com/k913npgk/TStockNews)。本地與 `screener-data` 已有 150 個交易日的行情／法人暖機；GitHub 兩個 LINE Secrets 已建立。31 項本地測試通過；可重複使用的隔離模式見 [測試流程](test-flow.md)。2026-10-02 缺少同期財報快照，完整交易日五項篩選驗收尚待完成；正式自動推播保持關閉。
 
+2026-10-03 的 [Actions → LINE 隔離驗收](https://github.com/k913npgk/TStockNews/actions/runs/37127033209)成功：目標日回退至 2026-10-02，LINE delivery=`SENT`，兩名群組收件人、免費配額與群組存取檢查通過。正式 `screener-data` SHA 在測試前後保持 `0f4ec497f8982528ece4edae7274658f1c3bb478`；測試報告與 delivery 只存 `screener-tests`。這是資料缺漏報告的端到端發布驗收，尚未補足歷史財報，也不代表使用者已閱讀。
+
+main 已啟用 PR 與必要 CI `unit-tests`，包含管理員；不要求額外審核人數（單人專案），但必須透過 PR 且 CI 通過。main、screener-data、screener-tests 均禁止 force push／刪除。本地 `core.hooksPath=.githooks` 已啟用。正式排程推播開關明確設為 `LINE_ENABLED=false`。
+
 ## 本地暖機（使用者執行）
 
 220 個曆日通常足夠包含 120 個交易日，實際仍依休市日曆。這是歷史價格／法人暖機，不會產生歷史推荐，也不會將最新財報回填為舊財報。
