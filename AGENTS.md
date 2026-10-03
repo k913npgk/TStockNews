@@ -6,5 +6,5 @@
 - 程式變更使用 `codex/` 分支，先通過本地測試再 push、開 PR；main 透過通過 CI 的 PR 合併。禁止 force push、刪除 main，禁止憑證、群組 ID、log 或本地 data/reports 進入程式分支。
 - GitHub Actions 的正式資料僅寫 `screener-data`；測試資料僅寫 `screener-tests`。兩者互不合併。
 - 已完成本地暖機可用 `scripts/publish-warmup.py` 做一次性受檢查匯入；只包含兩市場同日行情、法人及暖機狀態，不包含財報回填、推薦、績效或憑證。
-- 測試不得寫入正式推薦、績效、分析、發送紀錄；不得以後取得財報回填目標日。不足資料須顯示 unknown/incomplete。
+- 測試使用與正式相同的推薦建構、五項門檻、排名及報告；推薦獨立保存，不得寫入正式推薦、績效、分析、發送紀錄。使用者允許測試以執行日取得的財報搭配目標交易日行情；保留真實取得日期並揭露，不能標成歷史當時資訊。正式歷史分析維持目標日可用資料界線。
 - 新 clone 執行 `git config core.hooksPath .githooks` 啟用本地 push 檢查。伺服器分支保護為主要管控，hook 為額外檢查。

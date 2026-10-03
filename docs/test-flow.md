@@ -20,15 +20,18 @@ gh run download <run_id> --name isolated-test-<run_id> --dir test-runs/download-
 
 ## 資料和日期規則
 
-- 正式行情／法人／已保存財報僅作輸入。輸入日期必須不晚於目標交易日，完整檢查暖機中應有的交易日；不會用缺報價自行推定休市。
+- 行情／法人輸入日期不晚於目標交易日，完整檢查暖機中應有的交易日；不會用缺報價自行推定休市。
 - 至少需要 120 個有效交易日暖機。測試不自動執行長批次 bootstrap，雲端測試上限為 5 分鐘；資料不足會產生明確 incomplete 報告。
-- 目標日為今天時可取得當日財報快照，僅存本次測試區；歷史目標日只使用目標日以前已保存的快照。不取今天財報回填歷史，不變更 available_date。
-- 歷史財報快照不存在時，仍可驗證 Actions、目標日行情、持久化和 LINE 發送；報告明示「無法完成五項篩選、合格檔數未知」。這不是完整篩選驗收通過。
-- 技術指標、五項門檻和排名沿用正式策略；完整資料才產生候選。測試不建立 signal、不呼叫績效追蹤、不提供測試績效。
+- 財報優先使用目標日以前保存的快照；若不存在，依使用者授權取得執行時最新財報，僅存本次測試區。例如 10/03 執行，行情／法人截至 10/02，財報取得日 10/03，觀察的下一交易日 10/05。
+- 不改寫原始 `observed_date`／`available_date`；較晚財報透過明確的測試資料截止日使用，報告揭露兩個日期及「不是歷史當時資訊重現」。正式歷史推薦仍禁止使用較晚財報。
+- 正式與測試共用推薦建構函式、KD／MACD、五項門檻、排名及報告呈現。測試會建立相同欄位結構的推薦／signals，ID 使用 `test:<run_id>:` 前綴，保存至 `test-runs/<run_id>/data/recommendations/<target_date>.json`，標記 `test_only` 及 `excluded_from_performance`。
+- 測試不呼叫績效追蹤、不建立測試績效；正式追蹤器也會拒絕計入帶測試標記的訊號。官方來源失敗即停止，不以資料缺漏冒充篩選成功。
 
 ## 隔離與重跑
 
 正式 job 與 test job 互斥。test job 輸出只放在 `test-runs/<GitHub run_id>/`，僅持久化到 `screener-tests`，不 push `screener-data`；不改寫正式推薦、績效、報告、錯誤或 LINE 發送狀態。程式分支不包含執行資料。
+
+Summary 的 `financial_observed_date`、`next_trading_day`、`warmup_sessions`、`financial_coverage` 可檢視資料範圍。只有 `analysis_status=COMPLETE` 代表完整五項篩選已完成；符合數可以為零，不會為了填滿報告放寬條件。
 
 每次 **Run workflow** 建立不同測試編號，可以重複檢視同一目標日。**Re-run jobs** 沿用同一編號、不可改寫報告及相同 LINE retry key：已 SENT 不重送；網路失敗可在 23 小時內重試；超過 23 小時停止，先核對群組再決定是否建立新測試。報告和 retry key 在外部 push 前先存到測試分支。額度不足／非免費方案／重試逾期會讓發送 step 失敗，不能把綠色 Actions 當成已送達。
 

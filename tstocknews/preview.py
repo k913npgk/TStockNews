@@ -1,11 +1,12 @@
-"""Read production inputs, write isolated previews, never create signal/performance records."""
+"""Same recommendations as production, isolated test records with no performance writes."""
 from datetime import date, timedelta
 from pathlib import Path
 import re
 import shutil
 
 from . import STRATEGY_VERSION
-from .engine import MIN_HISTORY_SESSIONS, screen
+from .analysis import recommendations
+from .engine import MIN_HISTORY_SESSIONS
 from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
@@ -82,7 +83,7 @@ def preview(source, runs, run_id, requested):
         if current.weekday() < 5 and ds not in calendars[current.year] and ds not in closures and ds not in sessions:
             raise SourceError(f"Missing expected warm-up session {ds}; resume bootstrap first")
         current += timedelta(days=1)
-    # Most recent archived snapshot actually available by target, never today's backfill.
+    # Prefer the archived target-day inputs; runtime financials are allowed for tests.
     financial = None
     for path in sorted((source / "financials").glob("*.json.gz"), reverse=True):
         if path.name[:10] > target:
@@ -93,23 +94,38 @@ def preview(source, runs, run_id, requested):
                 raise SourceError("Financial snapshot filename/observation date mismatch")
             financial = value
             break
-    if financial is None and target == today().isoformat():
-        financial = universe_and_financials(Client(data), target)
+    if financial is None:
+        financial = universe_and_financials(Client(data), today().isoformat())
+    observed = financial.get("observed_date", target)
+    upcoming = date.fromisoformat(target) + timedelta(days=1)
+    for _ in range(370):
+        if upcoming.year not in calendars:
+            calendars[upcoming.year] = holiday_days(calendar_client, upcoming.year)
+        next_day = upcoming.isoformat()
+        if upcoming.weekday() < 5 and next_day not in calendars[upcoming.year] and next_day not in closures:
+            break
+        upcoming += timedelta(days=1)
+    else:
+        raise SourceError("Next trading session not found")
     warnings = []
     if len(sessions) < MIN_HISTORY_SESSIONS:
         warnings.append("WARMUP_REQUIRED")
     if financial is None:
         warnings.append("HISTORICAL_FINANCIAL_SNAPSHOT_MISSING")
-    elif not financial.get("fundamentals") or any(not row.get("available_date") or row["available_date"] > min(target, financial.get("observed_date", target)) for row in financial["fundamentals"]):
+    elif observed > today().isoformat() or not financial.get("fundamentals") or any(not row.get("available_date") or row["available_date"] > observed for row in financial["fundamentals"]):
         raise SourceError("Financial snapshot contains unavailable or future observations")
     result = None
     if not warnings:
-        write(data / "financials" / (target + ".json.gz"), financial)
-        result = screen(target, sessions, financial["universe"], prices, financial["fundamentals"], institutions)
-        write(root / "screen.json", {**result, "test_only": True, "excluded_from_performance": True})
+        write(data / "financials" / (observed + ".json.gz"), financial)
+        result = recommendations(target, sessions, prices, institutions, financial, test_run_id=run_id)
+        write(data / "recommendations" / (target + ".json"), result)
+        write(root / "screen.json", result)
     header = [f"【測試報告｜不計入績效】台股篩選｜{target}",
               f"執行指定日：{requested}；目標交易日：{target}；測試編號：{run_id}",
-              "本次僅供檢視；不建立正式推薦、不計入績效、不改寫正式分析。", ""]
+              f"行情／法人截至：{target}；財報／營收快照取得日：{observed}。",
+              f"推薦觀察的下一交易日：{next_day}。",
+              "本次建立獨立測試推薦；不計入績效、不改寫正式分析。",
+              *( ["使用執行時財報搭配目標日行情，供下一交易日檢視；不是目標日當時資訊的歷史重現。"] if observed > target else []), ""]
     if result is not None:
         body = render(target, result, [], STRATEGY_VERSION, include_performance=False)
     else:
@@ -128,6 +144,13 @@ def preview(source, runs, run_id, requested):
                 "test_only": True, "excluded_from_performance": True,
                 "status": "TEST_REPORT_READY", "analysis_status": "COMPLETE" if result is not None else "INCOMPLETE",
                 "warnings": warnings, "selected": len(result["candidates"]) if result is not None else None,
+                "financial_observed_date": observed, "late_financial_snapshot": observed > target,
+                "next_trading_day": next_day, "warmup_sessions": len(sessions),
+                "financial_coverage": {market: {"universe": sum(r["market"] == market for r in financial["universe"]),
+                    "eps": sum(r["market"] == market and r.get("eps") is not None for r in financial["fundamentals"]),
+                    "revenue": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None for r in financial["fundamentals"])}
+                    for market in ("twse", "tpex")},
+                "recommendations": str(data / "recommendations" / (target + ".json")) if result else None,
                 "report_hash": digest(text), "input_hash": digest({"prices": prices, "institutions": institutions, "financial": financial})}
     write(manifest_path, manifest)
     return manifest

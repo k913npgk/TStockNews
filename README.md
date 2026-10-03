@@ -4,7 +4,7 @@
 
 公開專案：[k913npgk/TStockNews](https://github.com/k913npgk/TStockNews)。
 
-目前已完成 150 個交易日的行情／法人暖機、LINE Secrets 設定與隔離測試模式。測試程序與資料邊界見 [可重複使用的 Actions → LINE 測試](docs/test-flow.md)。尚缺 2026-10-02 財報快照，無法宣稱該日完整五項篩選已驗收；LINE 每日自動推播保持關閉，待完整交易日驗收後啟用。最新驗收紀錄見 [部署指南](docs/deployment.md)。
+目前已完成 150 個交易日的行情／法人暖機與 LINE Secrets 設定。正式與測試共用推薦建構、指標、五項條件、排名與報告；測試推薦獨立保存、不計入績效，缺少歷史快照時允許使用執行日財報並揭露日期。操作見 [Actions → LINE 測試](docs/test-flow.md)，自動推播及最新驗收見 [部署指南](docs/deployment.md)。
 
 已確認：上市＋上櫃普通股、五項條件全部通過、不足 10 檔不補、LINE 群組 2 人；採用下列門檻與交易日績效定義。
 
@@ -47,10 +47,9 @@ python -B -m tstocknews daily
 
 GitHub 與 LINE 設定、長批次查核方式及實作限制見 [部署指南](docs/deployment.md)。
 
-## 尚需設定
+## 正式排程
 
-1. 在具備當時財報快照的交易日完成完整篩選驗收。
-2. 確認 LINE 群組實際顯示後，決定是否將 `LINE_ENABLED` 設為 `true` 啟用正式自動推播。
+每日台灣時間 21:07 更新行情／法人及當日財報、保存正式推薦與 LINE retry key，再發送報告。交易日暖機不足、來源失敗或發送受阻，Actions 顯示失敗；非交易日不發正式報告。自動推播開關為 repository variable `LINE_ENABLED=true`。
 
 ## 實作順序
 

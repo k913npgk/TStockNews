@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_engine import bars, weekdays
-from tstocknews.cli import main
+from tstocknews.cli import main, daily
+from tstocknews.engine import track
 from tstocknews.preview import preview, target_session
 from tstocknews.storage import read, write
 
@@ -60,7 +61,11 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(result['analysis_status'], 'COMPLETE')
             self.assertEqual(result['selected'], 1)
             self.assertEqual(files(source), before)
-            self.assertFalse((runs / 'run-1/data/recommendations').exists())
+            recommendation = read(runs / 'run-1/data/recommendations' / (day + '.json'))
+            self.assertEqual(len(recommendation['signals']), 1)
+            self.assertTrue(recommendation['test_only'])
+            self.assertTrue(recommendation['signals'][0]['signal_id'].startswith('test:run-1:'))
+            self.assertEqual(track(recommendation['signals'], [], [], day), [])
             self.assertFalse((runs / 'run-1/data/performance').exists())
             text = (runs / 'run-1/reports' / (day + '.md')).read_text(encoding='utf-8')
             self.assertIn('【測試報告｜不計入績效】', text)
@@ -72,19 +77,31 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(preview(source, runs, 'run-2', day)['selected'], 1)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_missing_historical_snapshot_is_unknown_not_zero_or_latest_backfill(self, calendar):
+    def test_missing_historical_snapshot_uses_runtime_financials_with_true_dates(self, calendar):
         with tempfile.TemporaryDirectory() as tmp:
             source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
             day = self.seed(source, financial=False)
             write(source / 'financials' / '2026-10-03.json.gz', {'observed_date': '2026-10-03'})
             before = files(source)
-            with patch('tstocknews.preview.universe_and_financials', side_effect=AssertionError('future backfill')):
+            runtime = {'observed_date': '2026-10-03', 'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}],
+                       'fundamentals': [{'symbol': '2330', 'market': 'twse', 'eps': 1, 'revenue_yoy_3m': .2,
+                                         'available_date': '2026-10-03', 'fiscal_period': '2026-Q2'}]}
+            with patch('tstocknews.preview.today', return_value=date(2026, 10, 3)), \
+                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
                 result = preview(source, runs, 'missing', day)
-            self.assertEqual(result['analysis_status'], 'INCOMPLETE')
-            self.assertIsNone(result['selected'])
-            self.assertIn('HISTORICAL_FINANCIAL_SNAPSHOT_MISSING', result['warnings'])
+            fetch.assert_called_once()
+            self.assertEqual(fetch.call_args.args[1], '2026-10-03')
+            self.assertEqual(result['analysis_status'], 'COMPLETE')
+            self.assertEqual(result['selected'], 1)
+            self.assertTrue(result['late_financial_snapshot'])
             self.assertEqual(files(source), before)
-            self.assertFalse((runs / 'missing/screen.json').exists())
+            saved = read(runs / 'missing/data/recommendations' / (day + '.json'))
+            self.assertEqual(saved['candidates'][0]['fundamental_available_date'], '2026-10-03')
+            self.assertEqual(saved['diagnostics']['fundamental_as_of'], '2026-10-03')
+            self.assertEqual(read(runs / 'missing/data/financials/2026-10-03.json.gz'), runtime)
+            self.assertFalse((runs / 'missing/data/performance').exists())
+            text = (runs / 'missing/reports' / (day + '.md')).read_text(encoding='utf-8')
+            self.assertIn('不是目標日當時資訊的歷史重現', text)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
     def test_future_dated_financial_row_fails_without_production_write(self, calendar):
@@ -144,3 +161,50 @@ class PreviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch('tstocknews.cli.push', return_value={'status': 'QUOTA_BLOCKED'}):
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(main(['--data-dir', tmp, 'send', '--require-sent']), 1)
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_production_and_test_recommendations_match_for_same_inputs(self, calendar):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, formal = Path(tmp) / 'source', Path(tmp) / 'formal'
+            day = self.seed(source)
+            self.seed(formal)
+            (formal / 'recommendations' / (day + '.json')).unlink()
+            preview(source, Path(tmp) / 'tests', 'parity', day)
+            with patch('tstocknews.cli.holiday_days', return_value=set()), patch('tstocknews.cli.sync'):
+                daily(formal, Path(tmp) / 'formal-reports', day)
+            production = read(formal / 'recommendations' / (day + '.json'))
+            test = read(Path(tmp) / 'tests/parity/data/recommendations' / (day + '.json'))
+            self.assertEqual(test['candidates'], production['candidates'])
+            self.assertEqual(test['data_hash'], production['data_hash'])
+            self.assertEqual(test['diagnostics'], production['diagnostics'])
+            self.assertEqual(test['strategy_version'], production['strategy_version'])
+            self.assertEqual(test['signals'][0]['rank'], production['signals'][0]['rank'])
+            self.assertNotEqual(test['signals'][0]['signal_id'], production['signals'][0]['signal_id'])
+
+    def test_trading_day_without_report_fails_but_closed_day_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            for status, expected in [('WARMUP_REQUIRED', 1), ('NON_TRADING_DAY', 0), ('REPORT_READY', 0)]:
+                with patch('tstocknews.cli.daily', return_value={'status': status}):
+                    self.assertEqual(main(['--data-dir', tmp, 'daily', '--require-report']), expected)
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_financial_source_failure_cannot_be_reported_as_success(self, calendar):
+        from tstocknews.official import SourceError
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'source'
+            day = self.seed(source, financial=False)
+            before = files(source)
+            with patch('tstocknews.preview.universe_and_financials', side_effect=SourceError('source unavailable')):
+                with self.assertRaises(SourceError):
+                    preview(source, Path(tmp) / 'tests', 'failed', day)
+            self.assertEqual(files(source), before)
+
+    @patch('tstocknews.cli.holiday_days', return_value=set())
+    @patch('tstocknews.cli.sync')
+    def test_test_record_cannot_be_used_by_production(self, sync, calendar):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'source'
+            day = self.seed(source)
+            write(source / 'recommendations' / (day + '.json'), {'test_only': True, 'signals': []})
+            with self.assertRaisesRegex(ValueError, 'Test recommendations'):
+                daily(source, Path(tmp) / 'reports', day)

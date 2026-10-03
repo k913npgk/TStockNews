@@ -11,7 +11,7 @@ on:
         options: [daily, bootstrap, test]
         default: daily
       date:
-        description: 'Taiwan YYYY-MM-DD; test resolves holidays to previous session; no future financial backfill'
+        description: 'Taiwan YYYY-MM-DD; tests use prior session on holidays and may use runtime financials'
         type: string
       send_line:
         description: 'Send the prepared report to LINE (default is preview only)'
@@ -77,6 +77,7 @@ jobs:
       - name: Unit tests
         run: python -B -m unittest discover -s tests -v
       - name: Collect and screen (or manual bootstrap)
+        id: analysis
         env:
           MODE: ${{ inputs.mode || 'daily' }}
           TARGET_DATE: ${{ steps.date.outputs.value }}
@@ -84,8 +85,18 @@ jobs:
           if [ "$MODE" = bootstrap ]; then
             python -B -m tstocknews bootstrap --days 220 --end "$TARGET_DATE"
           else
-            python -B -m tstocknews daily --date "$TARGET_DATE"
-            python -B -m tstocknews prepare-send --date "$TARGET_DATE"
+            python -B -m tstocknews daily --date "$TARGET_DATE" --require-report
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          status = json.loads(Path('data/status.json').read_text())
+          ready = status.get('status') == 'REPORT_READY' and status.get('date') == os.environ['TARGET_DATE']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('report_ready='+str(ready).lower()+'\n')
+          PY
+            if [ -f "reports/$TARGET_DATE.md" ] && [ "$(python -c 'import json; print(json.load(open("data/status.json"))["status"])')" = REPORT_READY ]; then
+              python -B -m tstocknews prepare-send --date "$TARGET_DATE"
+            fi
           fi
       - name: Persist prepared report and retry key before sending
         if: always()
@@ -106,12 +117,12 @@ jobs:
             git -C state-checkout push origin HEAD:refs/heads/screener-data
           fi
       - name: LINE push
-        if: success() && inputs.mode != 'bootstrap' && (inputs.send_line == true || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true'))
+        if: success() && steps.analysis.outputs.report_ready == 'true' && (inputs.send_line == true || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true'))
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
           TARGET_DATE: ${{ steps.date.outputs.value }}
-        run: python -B -m tstocknews send --date "$TARGET_DATE"
+        run: python -B -m tstocknews send --date "$TARGET_DATE" --require-sent
       - name: Save delivery result
         if: always()
         shell: bash
