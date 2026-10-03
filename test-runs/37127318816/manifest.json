@@ -1,0 +1,15 @@
+{
+  "analysis_status": "INCOMPLETE",
+  "excluded_from_performance": true,
+  "input_hash": "94db69ec0745cb3636298fd118899c22b7de6d15b77bfa30c4fa16b589e77958",
+  "report_hash": "57c40e8c160ddfaf385f529a19f233c6ae4207cd8c427afcfcb0d4fe00e4a85d",
+  "requested_date": "2026-10-03",
+  "run_id": "37127318816",
+  "selected": null,
+  "status": "TEST_REPORT_READY",
+  "target_date": "2026-10-02",
+  "test_only": true,
+  "warnings": [
+    "HISTORICAL_FINANCIAL_SNAPSHOT_MISSING"
+  ]
+}
