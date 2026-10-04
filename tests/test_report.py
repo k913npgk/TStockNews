@@ -24,26 +24,39 @@ def report(rows, performance=(), include_performance=True):
 
 
 class MobileReportTests(unittest.TestCase):
-    def test_stock_information_contains_only_rank_and_name(self):
+    def test_stock_information_contains_rank_name_symbol_and_daily_change(self):
         text = report([candidate()])
         self.assertEqual(text.split("━━━━━━━━━━━━", 1)[0].splitlines(),
-                         ["📊 台股每日篩選｜2026-10-02", "今日符合 1 檔，列出 1 檔", "", "① 示例電子", ""])
-        for field in ("0001", "上市", "收盤價", "當日漲跌", "成交量", "法人", "營收", "EPS", "營業利益率", "DIF", "DEA"):
+                         ["📊 台股每日篩選｜2026-10-02", "今日符合 1 檔，列出 1 檔", "",
+                          "① 示例電子（0001）", "當日漲跌幅：▲ +2.03%", ""])
+        for field in ("上市", "收盤價", "成交量", "法人", "營收", "EPS", "營業利益率", "DIF", "DEA"):
             self.assertNotIn(field, text)
         for internal in ("EPS_NOT_POSITIVE", "internal-version", "資料品質", "為什麼入選", "twse"):
             self.assertNotIn(internal, text)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 38)
 
-    def test_name_only_rows_do_not_require_market_or_indicator_fields(self):
-        text = report([{"name": "第一名"}, {"name": "第二名"}], include_performance=False)
-        self.assertIn("① 第一名\n② 第二名\n", text)
+    def test_identity_rows_do_not_require_market_or_indicator_fields(self):
+        text = report([{"name": "第一名", "symbol": "0001"},
+                       {"name": "第二名", "symbol": "0002"}], include_performance=False)
+        self.assertIn("① 第一名（0001）\n當日漲跌幅：資料未提供\n\n② 第二名（0002）\n當日漲跌幅：資料未提供\n", text)
         self.assertNotIn("歷次入選表現", text)
+
+    def test_rising_falling_flat_and_unknown_daily_changes(self):
+        for value, expected in ((.0178, "▲ +1.78%"), (-.0173, "▼ -1.73%"),
+                                (0, "持平 0.00%"), (None, "資料未提供"),
+                                (float('nan'), "資料未提供"), (float('inf'), "資料未提供")):
+            with self.subTest(value=value):
+                self.assertIn("當日漲跌幅：" + expected, report([candidate(price_change_pct=value)]))
+        # An amount alone cannot substitute for the missing official percentage.
+        self.assertIn("當日漲跌幅：資料未提供", report([candidate(price_change=2.5, price_change_pct=None)]))
 
     def test_render_preserves_full_candidate_records_and_ranking(self):
         rows = [candidate(name="較高排名", symbol="9999"), candidate(name="較低排名", symbol="0001")]
         original = deepcopy(rows)
         text = report(rows)
-        self.assertIn("① 較高排名\n② 較低排名\n", text)
+        self.assertIn("① 較高排名（9999）", text)
+        self.assertIn("② 較低排名（0001）", text)
+        self.assertLess(text.index("① 較高排名"), text.index("② 較低排名"))
         self.assertEqual(rows, original)
 
     def test_performance_excludes_pending_and_missing_outcomes(self):
@@ -90,5 +103,5 @@ class MobileReportTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertIn("今日符合 20 檔，列出 20 檔", text)
         self.assertIn("⑩ 示例科技", text)
-        self.assertIn("⑪ 示例科技\n", text)
-        self.assertIn("⑳ 示例科技\n", text)
+        self.assertIn("⑪ 示例科技（0010）\n當日漲跌幅：▲ +2.03%\n", text)
+        self.assertIn("⑳ 示例科技（0019）\n當日漲跌幅：▲ +2.03%\n", text)

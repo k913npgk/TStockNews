@@ -1,5 +1,6 @@
-"""Compact ranked-name reports for mobile LINE readers."""
+"""Compact stock rankings and daily changes for mobile LINE readers."""
 from collections import Counter
+import math
 from statistics import mean, median
 
 
@@ -10,14 +11,21 @@ def pct(value):
     return "資料未提供" if value is None else f"{value:+.2%}"
 
 
+def daily_change_pct(value):
+    if value is None or not math.isfinite(value):
+        return "資料未提供"
+    if value == 0:
+        return "持平 0.00%"
+    return f"{'▲' if value > 0 else '▼'} {value:+.2%}"
+
+
 def render(day, result, performance, strategy, include_performance=True):
     lines = [f"📊 台股每日篩選｜{day}",
              f"今日符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
     for i, row in enumerate(result["candidates"], 1):
         rank = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"[i - 1] if i <= 20 else str(i)
-        lines.append(f"{rank} {row.get('name', '')}")
-    if result["candidates"]:
-        lines.append("")
+        lines += [f"{rank} {row.get('name', '')}（{row['symbol']}）",
+                  "當日漲跌幅：" + daily_change_pct(row.get("price_change_pct")), ""]
     if not result["candidates"]:
         lines += ["今天沒有符合條件的股票，", "持續觀察即可。", ""]
     if include_performance:

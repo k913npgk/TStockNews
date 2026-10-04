@@ -180,7 +180,7 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual((reports / (day + ".md")).read_text(encoding="utf-8"), text)
                 outcomes = read(root / "performance" / (day + ".json"))
                 self.assertTrue(all(row["status"] == "PENDING_ENTRY" for row in outcomes))
-                self.assertIn("① Test\n", text)
+                self.assertIn("① Test（2330）\n當日漲跌幅：資料未提供\n", text)
                 self.assertNotIn("近 3 日法人買超占成交量", text)
                 self.assertAlmostEqual(original["candidates"][0]["institutional_buy_volume_ratio"], .004)
 
