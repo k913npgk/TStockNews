@@ -72,8 +72,8 @@ class MobileReportTests(unittest.TestCase):
         self.assertNotIn("歷次入選表現", text)
 
     @patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "test", "LINE_GROUP_ID": "testgroup"})
-    def test_ten_stock_report_and_all_horizons_fit_one_line_message(self):
-        rows = [candidate(symbol=f"{i:04d}", name="示例科技") for i in range(10)]
+    def test_twenty_stock_report_and_all_horizons_fit_one_line_request(self):
+        rows = [candidate(symbol=f"{i:04d}", name="示例科技") for i in range(20)]
         history = [{"horizon": h, "status": "MATURE", "price_return": .02} for h in (1, 3, 5, 10, 20)]
         text = report(rows, history)
         calls = []
@@ -88,5 +88,11 @@ class MobileReportTests(unittest.TestCase):
             return {}
         self.assertEqual(send(text, prepare("hash"), request)["status"], "SENT")
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["messages"], [{"type": "text", "text": text}])
+        messages = calls[0]["messages"]
+        self.assertLessEqual(len(messages), 5)
+        self.assertTrue(all(m["type"] == "text" and len(m["text"]) <= 4500 for m in messages))
+        self.assertEqual("".join(m["text"] for m in messages), text)
+        self.assertIn("今日符合 20 檔，列出 20 檔", text)
         self.assertIn("⑩ 示例科技", text)
+        self.assertIn("⑪ 示例科技（0010）", text)
+        self.assertIn("⑳ 示例科技（0019）", text)

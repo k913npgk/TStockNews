@@ -36,7 +36,7 @@ def render(day, result, performance, strategy, include_performance=True):
     for i, row in enumerate(result["candidates"], 1):
         values = row.get("indicators", row)
         market = {"twse": "上市", "tpex": "上櫃"}.get(row["market"], row["market"])
-        rank = "①②③④⑤⑥⑦⑧⑨⑩"[i - 1] if i <= 10 else str(i)
+        rank = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"[i - 1] if i <= 20 else str(i)
         month = row.get("revenue_end_month")
         lines += [SEPARATOR, f"{rank} {row.get('name', '')}（{row['symbol']}）｜{market}", "",
                   "💰 股價與成交", f"收盤價：{row['close']:.2f} 元",

@@ -1,7 +1,8 @@
 import unittest
 from datetime import date, timedelta
+from unittest.mock import patch
 
-from tstocknews.engine import _ema, _indicators, screen, track
+from tstocknews.engine import _ema, _indicators, _kd_window, screen, track
 
 
 def weekdays(count):
@@ -45,7 +46,75 @@ class IndicatorTests(unittest.TestCase):
         self.assertTrue(all(value == value for seq in values.values() for value in seq))
 
 
+class KDWindowTests(unittest.TestCase):
+    def test_window_boundaries(self):
+        cases = [
+            ([44, 45, 46, 47], "PRE_CROSS", None),  # gap exactly 3
+            ([44, 45, 46, 46.9], "OUTSIDE_WINDOW", None),
+            ([44, 45, 47, 47], "OUTSIDE_WINDOW", None),  # unchanged gap
+            ([44, 45, 49, 48], "OUTSIDE_WINDOW", None),  # widening gap
+            ([44, 45, 49, 50], "PRE_CROSS", None),  # equality is not a cross
+            ([44, 45, 50, 51], "CROSS_TODAY", 0),
+            ([44, 49, 51, 52], "OUTSIDE_WINDOW", 1),  # D flat after cross
+            ([49, 51, 52, 53], "OUTSIDE_WINDOW", 2),
+            ([49, 51, 52, 53, 54], "OUTSIDE_WINDOW", 3),
+            ([49, 51, 52, 49], "OUTSIDE_WINDOW", 2),  # reversed cross
+        ]
+        for k, stage, age in cases:
+            with self.subTest(k=k):
+                result = _kd_window(k, [50] * len(k))
+                self.assertEqual(result["kd_stage"], stage)
+                self.assertEqual(result["kd_window_pass"], stage != "OUTSIDE_WINDOW")
+                self.assertEqual(result["kd_cross_age_sessions"], age)
+                self.assertEqual(result["kd_golden_cross"], stage == "CROSS_TODAY")
+
+    def test_post_cross_requires_both_lines_rising_without_age_limit(self):
+        cases = [
+            ([49, 52, 54], [50, 51, 52], "POST_CROSS", 1),
+            ([49, 52, 54, 56, 58], [50, 51, 52, 53, 54], "POST_CROSS", 3),
+            ([60, 61, 62, 63], [50, 51, 52, 53], "POST_CROSS", None),
+            ([49, 52, 52], [50, 51, 51.5], "OUTSIDE_WINDOW", 1),  # K flat
+            ([49, 54, 53], [50, 51, 52], "OUTSIDE_WINDOW", 1),  # K falls
+            ([49, 52, 54], [50, 51, 51], "OUTSIDE_WINDOW", 1),  # D flat
+            ([49, 52, 54], [50, 51, 50.5], "OUTSIDE_WINDOW", 1),  # D falls
+            ([49, 52, 48], [50, 51, 52], "OUTSIDE_WINDOW", 1),  # bearish
+            ([48, 49, 51], [50, 50, 50], "CROSS_TODAY", 0),  # keep day of cross
+        ]
+        for k, d, stage, age in cases:
+            with self.subTest(k=k, d=d):
+                result = _kd_window(k, d)
+                self.assertEqual(result["kd_stage"], stage)
+                self.assertEqual(result["kd_window_pass"], stage != "OUTSIDE_WINDOW")
+                self.assertEqual(result["kd_cross_age_sessions"], age)
+                self.assertEqual(result["kd_k_rising"], k[-1] > k[-2])
+                self.assertEqual(result["kd_d_rising"], d[-1] > d[-2])
+
+
 class ScreenTests(unittest.TestCase):
+    def test_kd_window_integrates_with_other_gates_and_ignores_future_prices(self):
+        sessions = weekdays(125)
+        target = sessions[-2]
+        px = bars(sessions=sessions)
+        fund = [{"symbol": "2330", "market": "twse", "eps": 1,
+                 "revenue_yoy_3m": .2, "available_date": target}]
+        inst = [{"date": ds, "symbol": "2330", "market": "twse", "net_buy_shares": 1000}
+                for ds in sessions[-4:-1]]
+        for tail, d_tail, stage in [([44, 45, 46, 47], [50] * 4, "PRE_CROSS"),
+                                    ([49, 52, 54, 56], [50, 51, 52, 53], "POST_CROSS"),
+                                    ([51, 52, 53, 54], [50] * 4, "OUTSIDE_WINDOW")]:
+            def indicators(rows):
+                self.assertEqual(rows[-1]["date"], target)
+                self.assertEqual(len(rows), 120)
+                return {"k": [50] * 116 + tail, "d": [50] * 116 + d_tail,
+                        "dif": list(range(120)), "dea": [0] * 120}
+            with self.subTest(stage=stage), patch('tstocknews.engine._indicators', side_effect=indicators):
+                result = screen(target, sessions, [{"symbol": "2330", "market": "twse"}], px, fund, inst)
+                self.assertEqual(result["eligible_count"], int(stage != "OUTSIDE_WINDOW"))
+                self.assertEqual(result["diagnostics"]["symbols"]["twse:2330"]["kd_stage"], stage)
+                blocked = screen(target, sessions, [{"symbol": "2330", "market": "twse"}], px, fund, [])
+                self.assertEqual(blocked["eligible_count"], 0)
+                self.assertIn("MISSING_INSTITUTIONAL_DATA", blocked["diagnostics"]["symbols"]["twse:2330"]["reasons"])
+
     def test_point_in_time_fundamentals_and_all_gates(self):
         sessions = weekdays(125)
         px = bars(sessions=sessions)
@@ -84,11 +153,11 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["diagnostics"]["exclusion_counts"]["CORPORATE_ACTION_UNRESOLVED"], 1)
 
-    def test_ranking_is_deterministic_and_caps_at_ten(self):
+    def test_ranking_is_deterministic_and_caps_at_twenty(self):
         sessions = weekdays(125)
         universe = []
         px, fundamentals, inst = [], [], []
-        for i in range(12):
+        for i in range(22):
             symbol = f"{1000 + i:04d}"
             universe.append({"symbol": symbol, "market": "twse", "name": symbol})
             px.extend(bars(symbol=symbol, sessions=sessions, volume=2_500_000))
@@ -96,9 +165,11 @@ class ScreenTests(unittest.TestCase):
             inst.extend({"date": ds, "symbol": symbol, "market": "twse", "net_buy_shares": (i + 1) * 1000} for ds in sessions[-3:])
         first = screen(sessions[-1], sessions, universe, px, fundamentals, inst)
         second = screen(sessions[-1], sessions, universe, px, fundamentals, inst)
-        self.assertEqual(len(first["candidates"]), 10)
+        self.assertEqual(first["eligible_count"], 22)
+        self.assertEqual(len(first["candidates"]), 20)
         self.assertEqual(first, second)
-        self.assertEqual(first["candidates"][0]["symbol"], "1011")
+        self.assertEqual([row["symbol"] for row in first["candidates"]],
+                         [str(i) for i in range(1021, 1001, -1)])
 
 
 class TrackingTests(unittest.TestCase):
