@@ -1,7 +1,6 @@
-"""Short, grouped plain-text reports for mobile LINE readers."""
+"""Compact stock rankings and daily changes for mobile LINE readers."""
 from collections import Counter
 import math
-import re
 from statistics import mean, median
 
 
@@ -12,45 +11,21 @@ def pct(value):
     return "資料未提供" if value is None else f"{value:+.2%}"
 
 
-def daily_change(row):
-    change, rate = row.get("price_change"), row.get("price_change_pct")
-    if change is None or not math.isfinite(change):
+def daily_change_pct(value):
+    if value is None or not math.isfinite(value):
         return "資料未提供"
-    marker = "▲ " if change > 0 else "▼ " if change < 0 else ""
-    amount = f"{change:+.2f}" if change else "0.00"
-    percent = (f"{rate:+.2%}" if rate else "0.00%") if rate is not None and math.isfinite(rate) else "幅度未提供"
-    return f"{marker}{amount} 元（{percent}）"
-
-
-def fiscal_label(value):
-    match = re.fullmatch(r"(\d{4})-?Q([1-4])", value or "")
-    if not match:
-        return value or "資料未提供"
-    period = {"1": "第一季", "2": "上半年", "3": "前三季", "4": "全年"}[match[2]]
-    return f"{match[1]} 年{period}"
+    if value == 0:
+        return "持平 0.00%"
+    return f"{'▲' if value > 0 else '▼'} {value:+.2%}"
 
 
 def render(day, result, performance, strategy, include_performance=True):
     lines = [f"📊 台股每日篩選｜{day}",
              f"今日符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
     for i, row in enumerate(result["candidates"], 1):
-        values = row.get("indicators", row)
-        market = {"twse": "上市", "tpex": "上櫃"}.get(row["market"], row["market"])
-        rank = "①②③④⑤⑥⑦⑧⑨⑩"[i - 1] if i <= 10 else str(i)
-        month = row.get("revenue_end_month")
-        lines += [SEPARATOR, f"{rank} {row.get('name', '')}（{row['symbol']}）｜{market}", "",
-                  "💰 股價與成交", f"收盤價：{row['close']:.2f} 元",
-                  f"當日漲跌：{daily_change(row)}",
-                  f"成交量：{row['volume_shares']/1000:,.1f} 張", "",
-                  "🏦 法人", "近 3 日法人買超占成交量：",
-                  pct(values.get("institutional_buy_volume_ratio")), "",
-                  "📋 營收與財報", "近 3 個月營收年增：" + pct(row.get("revenue_yoy_3m", values.get("revenue_yoy_3m"))),
-                  f"營收資料截至：{month.replace('-', '/') if month else '資料未提供'}",
-                  f"財報期間：{fiscal_label(row.get('fiscal_period'))}",
-                  f"累計每股盈餘 EPS：{row['eps']:.2f} 元",
-                  "營業利益率：" + pct(row.get("operating_margin")), "",
-                  "📉 技術指標", f"KD：K {row['kd_k']:.2f}／D {row['kd_d']:.2f}",
-                  "MACD：", f"DIF {row['macd_dif']:.3f}／DEA {row['macd_dea']:.3f}", ""]
+        rank = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"[i - 1] if i <= 20 else str(i)
+        lines += [f"{rank} {row.get('name', '')}（{row['symbol']}）",
+                  "當日漲跌幅：" + daily_change_pct(row.get("price_change_pct")), ""]
     if not result["candidates"]:
         lines += ["今天沒有符合條件的股票，", "持續觀察即可。", ""]
     if include_performance:

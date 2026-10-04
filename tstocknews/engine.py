@@ -11,6 +11,8 @@ from typing import Any
 HORIZONS = (1, 3, 5, 10, 20)
 MIN_HISTORY_SESSIONS = 120
 MIN_VOLUME_SHARES = 2_000_000
+MAX_CANDIDATES = 20
+KD_PRE_CROSS_MAX_GAP = 3.0
 
 
 def _date(value: str) -> date:
@@ -65,6 +67,24 @@ def _indicators(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {"rsv": rsv, "k": k_values, "d": d_values, "dif": dif, "dea": dea}
 
 
+def _kd_window(k: list[float], d: list[float]) -> dict[str, Any]:
+    """Classify the current bar using only observed KD values, never future bars."""
+    gap = d[-1] - k[-1]
+    cross_age = next((age for age in range(len(k) - 1)
+                      if k[-age - 2] <= d[-age - 2] and k[-age - 1] > d[-age - 1]), None)
+    approaching = 0 <= gap <= KD_PRE_CROSS_MAX_GAP and gap < d[-2] - k[-2]
+    cross_today = cross_age == 0
+    k_rising, d_rising = k[-1] > k[-2], d[-1] > d[-2]
+    bullish_rising = k[-1] > d[-1] and k_rising and d_rising
+    stage = ("PRE_CROSS" if approaching else
+             "CROSS_TODAY" if cross_today else
+             "POST_CROSS" if bullish_rising else "OUTSIDE_WINDOW")
+    return {"kd_window_pass": approaching or cross_today or bullish_rising, "kd_stage": stage,
+            "kd_gap_d_minus_k": gap, "kd_cross_age_sessions": cross_age,
+            "kd_golden_cross": cross_today, "kd_k_rising": k_rising, "kd_d_rising": d_rising,
+            "kd_k_change_1_session": k[-1] - k[-2], "kd_d_change_1_session": d[-1] - d[-2]}
+
+
 def _row_key(row: dict[str, Any]) -> tuple[str, str]:
     return str(row.get("symbol", "")), str(row.get("market", ""))
 
@@ -87,7 +107,7 @@ def screen(
     institutional: list[dict[str, Any]],
     *, fundamental_as_of: str | None = None,
 ) -> dict[str, Any]:
-    """Apply all v1 gates and return at most ten ranked candidates.
+    """Apply all screening gates and return at most twenty ranked candidates.
 
     `sessions` is the authoritative ordered exchange-session calendar. Price gaps
     are never forward-filled. Fundamental records are point-in-time filtered by
@@ -103,6 +123,11 @@ def screen(
         "fundamental_as_of": financial_cutoff,
         "calendar_sessions_available": len(ordered_sessions),
         "minimum_history_sessions": MIN_HISTORY_SESSIONS,
+        "kd_rule": {"pre_cross_max_gap": KD_PRE_CROSS_MAX_GAP,
+                    "post_cross_sessions": None,
+                    "post_cross_requires_k_above_d": True,
+                    "post_cross_requires_k_and_d_rising": True,
+                    "rise_comparison_sessions": 1},
         "universe_count": len(universe),
         "eligible_count": 0,
         "exclusion_counts": defaultdict(int),
@@ -182,7 +207,7 @@ def screen(
         sum_volume3 = sum(int(r.get("volume_shares") or 0) for r in volume3_rows if r)
         sum_net3 = sum(net3)
         ratio = sum_net3 / sum_volume3 if sum_volume3 > 0 else None
-        cross = ind["k"][last_i - 1] <= ind["d"][last_i - 1] and ind["k"][last_i] > ind["d"][last_i]
+        kd = _kd_window(ind["k"], ind["d"])
         dif_rising = ind["dif"][last_i - 2] < ind["dif"][last_i - 1] < ind["dif"][last_i]
         latest_dif, latest_dea = ind["dif"][last_i], ind["dea"][last_i]
 
@@ -196,8 +221,8 @@ def screen(
             reasons.append("EPS_NOT_POSITIVE")
         if fund is not None and (revenue is None or revenue <= 0):
             reasons.append("REVENUE_GROWTH_NOT_POSITIVE")
-        if not cross:
-            reasons.append("KD_NO_GOLDEN_CROSS")
+        if not kd["kd_window_pass"]:
+            reasons.append("KD_OUTSIDE_CROSS_WINDOW")
         if not (latest_dif > latest_dea and dif_rising):
             reasons.append("MACD_GATE_FAILED")
         if len(net3) != 3 or not all(value > 0 for value in net3):
@@ -209,7 +234,7 @@ def screen(
             pass
 
         diag.update({
-            "kd_k": ind["k"][last_i], "kd_d": ind["d"][last_i], "kd_golden_cross": cross,
+            "kd_k": ind["k"][last_i], "kd_d": ind["d"][last_i], **kd,
             "macd_dif": latest_dif, "macd_dea": latest_dea, "macd_dif_rising_3_sessions": dif_rising,
             "institutional_net_buy_shares_3d": net3, "institutional_net_buy_shares_3d_sum": sum_net3,
             "volume_shares": volume, "volume_shares_3d_sum": sum_volume3,
@@ -233,6 +258,7 @@ def screen(
             "fundamental_available_date": fund.get("available_date") if fund else None,
             "fiscal_period": fund.get("fiscal_period") if fund else None,
             "kd_k": ind["k"][last_i], "kd_d": ind["d"][last_i],
+            **kd,
             "revenue_end_month": fund.get("revenue_end_month"),
             "operating_margin": fund.get("operating_margin"),
             "operating_cash_flow": fund.get("operating_cash_flow"),
@@ -252,7 +278,7 @@ def screen(
     ))
     diagnostics["eligible_count"] = len(candidates)
     diagnostics["exclusion_counts"] = dict(sorted(diagnostics["exclusion_counts"].items()))
-    return {"as_of": as_of, "eligible_count": len(candidates), "candidates": candidates[:10], "diagnostics": diagnostics}
+    return {"as_of": as_of, "eligible_count": len(candidates), "candidates": candidates[:MAX_CANDIDATES], "diagnostics": diagnostics}
 
 
 def track(

@@ -1,5 +1,6 @@
 import os
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 from tstocknews.line import prepare, send
@@ -23,33 +24,40 @@ def report(rows, performance=(), include_performance=True):
 
 
 class MobileReportTests(unittest.TestCase):
-    def test_financial_and_technical_values_are_preserved_in_short_lines(self):
+    def test_stock_information_contains_rank_name_symbol_and_daily_change(self):
         text = report([candidate()])
-        for value in ("示例電子（0001）｜上市", "125.50 元", "▲ +2.50 元（+2.03%）",
-                      "8,250.0 張", "+2.80%", "+18.60%", "2026/08", "2026 年上半年",
-                      "EPS：3.25 元", "+12.40%", "K 35.20／D 30.10", "DIF 1.235／DEA 1.080"):
-            self.assertIn(value, text)
+        self.assertEqual(text.split("━━━━━━━━━━━━", 1)[0].splitlines(),
+                         ["📊 台股每日篩選｜2026-10-02", "今日符合 1 檔，列出 1 檔", "",
+                          "① 示例電子（0001）", "當日漲跌幅：▲ +2.03%", ""])
+        for field in ("上市", "收盤價", "成交量", "法人", "營收", "EPS", "營業利益率", "DIF", "DEA"):
+            self.assertNotIn(field, text)
         for internal in ("EPS_NOT_POSITIVE", "internal-version", "資料品質", "為什麼入選", "twse"):
             self.assertNotIn(internal, text)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 38)
 
-    def test_falling_flat_and_missing_changes_are_distinct(self):
-        for amount, rate, expected in ((-1.2, -.0173, "▼ -1.20 元（-1.73%）"),
-                                      (0, 0, "0.00 元（0.00%）"),
-                                      (None, None, "資料未提供"),
-                                      (1.2, None, "▲ +1.20 元（幅度未提供）")):
-            with self.subTest(amount=amount):
-                text = report([candidate(price_change=amount, price_change_pct=rate)])
-                self.assertIn("當日漲跌：" + expected, text)
-        old = candidate()
-        old.pop("price_change")
-        old.pop("price_change_pct")
-        self.assertIn("當日漲跌：資料未提供", report([old]))
+    def test_identity_rows_do_not_require_market_or_indicator_fields(self):
+        text = report([{"name": "第一名", "symbol": "0001"},
+                       {"name": "第二名", "symbol": "0002"}], include_performance=False)
+        self.assertIn("① 第一名（0001）\n當日漲跌幅：資料未提供\n\n② 第二名（0002）\n當日漲跌幅：資料未提供\n", text)
+        self.assertNotIn("歷次入選表現", text)
 
-    def test_unknown_financial_observations_are_not_shown_as_zero(self):
-        text = report([candidate(operating_margin=None, revenue_end_month=None, fiscal_period="")])
-        for field in ("營業利益率", "營收資料截至", "財報期間"):
-            self.assertIn(field + "：資料未提供", text)
+    def test_rising_falling_flat_and_unknown_daily_changes(self):
+        for value, expected in ((.0178, "▲ +1.78%"), (-.0173, "▼ -1.73%"),
+                                (0, "持平 0.00%"), (None, "資料未提供"),
+                                (float('nan'), "資料未提供"), (float('inf'), "資料未提供")):
+            with self.subTest(value=value):
+                self.assertIn("當日漲跌幅：" + expected, report([candidate(price_change_pct=value)]))
+        # An amount alone cannot substitute for the missing official percentage.
+        self.assertIn("當日漲跌幅：資料未提供", report([candidate(price_change=2.5, price_change_pct=None)]))
+
+    def test_render_preserves_full_candidate_records_and_ranking(self):
+        rows = [candidate(name="較高排名", symbol="9999"), candidate(name="較低排名", symbol="0001")]
+        original = deepcopy(rows)
+        text = report(rows)
+        self.assertIn("① 較高排名（9999）", text)
+        self.assertIn("② 較低排名（0001）", text)
+        self.assertLess(text.index("① 較高排名"), text.index("② 較低排名"))
+        self.assertEqual(rows, original)
 
     def test_performance_excludes_pending_and_missing_outcomes(self):
         rows = [{"horizon": 10, "status": "MATURE", "price_return": .1},
@@ -72,8 +80,8 @@ class MobileReportTests(unittest.TestCase):
         self.assertNotIn("歷次入選表現", text)
 
     @patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "test", "LINE_GROUP_ID": "testgroup"})
-    def test_ten_stock_report_and_all_horizons_fit_one_line_message(self):
-        rows = [candidate(symbol=f"{i:04d}", name="示例科技") for i in range(10)]
+    def test_twenty_stock_report_and_all_horizons_fit_one_line_request(self):
+        rows = [candidate(symbol=f"{i:04d}", name="示例科技") for i in range(20)]
         history = [{"horizon": h, "status": "MATURE", "price_return": .02} for h in (1, 3, 5, 10, 20)]
         text = report(rows, history)
         calls = []
@@ -88,5 +96,12 @@ class MobileReportTests(unittest.TestCase):
             return {}
         self.assertEqual(send(text, prepare("hash"), request)["status"], "SENT")
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["messages"], [{"type": "text", "text": text}])
+        messages = calls[0]["messages"]
+        self.assertLessEqual(len(messages), 5)
+        self.assertTrue(all(m["type"] == "text" and len(m["text"]) <= 4500 for m in messages))
+        self.assertEqual("".join(m["text"] for m in messages), text)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("今日符合 20 檔，列出 20 檔", text)
         self.assertIn("⑩ 示例科技", text)
+        self.assertIn("⑪ 示例科技（0010）\n當日漲跌幅：▲ +2.03%\n", text)
+        self.assertIn("⑳ 示例科技（0019）\n當日漲跌幅：▲ +2.03%\n", text)
