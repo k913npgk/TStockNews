@@ -1,0 +1,30 @@
+{
+  "analysis_status": "COMPLETE",
+  "excluded_from_performance": true,
+  "financial_coverage": {
+    "tpex": {
+      "eps": 891,
+      "revenue": 889,
+      "universe": 892
+    },
+    "twse": {
+      "eps": 1083,
+      "revenue": 1082,
+      "universe": 1084
+    }
+  },
+  "financial_observed_date": "2026-10-04",
+  "input_hash": "c82ec5f701ec73bd92c9a0cca7b74fe255e6bf4173a99ea74d36585eb18cfd05",
+  "late_financial_snapshot": true,
+  "next_trading_day": "2026-10-05",
+  "recommendations": "test-runs/37186677819/data/recommendations/2026-10-02.json",
+  "report_hash": "1c4cf7733215347e12eb4eaeea78a255c061f56e68d7b2d424b31eb4b27f07e1",
+  "requested_date": "2026-10-02",
+  "run_id": "37186677819",
+  "selected": 20,
+  "status": "TEST_REPORT_READY",
+  "target_date": "2026-10-02",
+  "test_only": true,
+  "warmup_sessions": 120,
+  "warnings": []
+}
