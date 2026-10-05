@@ -12,5 +12,9 @@
   "triggers": {
     "crons": ["7 13 * * *", "20 13 * * *", "30 13 * * *"]
   },
-  "observability": { "enabled": true }
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  }
 }
