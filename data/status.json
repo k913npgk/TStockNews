@@ -1,4 +1,7 @@
 {
-  "date": "2026-10-04",
-  "status": "NON_TRADING_DAY"
+  "date": "2026-10-05",
+  "eligible_count": 25,
+  "report": "reports/2026-10-05.md",
+  "selected": 20,
+  "status": "REPORT_READY"
 }
