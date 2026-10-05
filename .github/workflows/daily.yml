@@ -1,4 +1,5 @@
 name: Daily Taiwan stock screener
+run-name: stock-screener ${{ inputs.mode || 'daily' }} ${{ inputs.date || 'scheduled' }}
 
 on:
   schedule:
@@ -17,6 +18,11 @@ on:
         description: 'Send the prepared report to LINE (default is preview only)'
         type: boolean
         default: false
+      scheduler:
+        description: 'Trigger source; Cloudflare automation also respects LINE_ENABLED'
+        type: choice
+        options: [manual, cloudflare]
+        default: manual
 
 permissions:
   contents: write
@@ -28,7 +34,7 @@ concurrency:
 
 jobs:
   run:
-    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'test'
+    if: (github.event_name != 'workflow_dispatch' || inputs.mode != 'test') && (github.event_name != 'schedule' || vars.SCHEDULER_PROVIDER != 'cloudflare')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -74,9 +80,25 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('value='+value+'\n')
           PY
+      - name: Skip immutable same-day delivery
+        id: delivery
+        env:
+          TARGET_DATE: ${{ steps.date.outputs.value }}
+          MODE: ${{ inputs.mode || 'daily' }}
+        run: |
+          if [ "$MODE" = bootstrap ]; then
+            echo 'already_sent=false' >> "$GITHUB_OUTPUT"
+          else
+            SENT=$(PYTHONPATH=. python -B scripts/check-delivery.py --date "$TARGET_DATE")
+            echo "already_sent=$SENT" >> "$GITHUB_OUTPUT"
+            if [ "$SENT" = true ]; then
+              echo "$TARGET_DATE: immutable SENT report verified; duplicate run skipped." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
       - name: Unit tests
         run: python -B -m unittest discover -s tests -v
       - name: Collect and screen (or manual bootstrap)
+        if: steps.delivery.outputs.already_sent != 'true'
         id: analysis
         env:
           MODE: ${{ inputs.mode || 'daily' }}
@@ -99,7 +121,7 @@ jobs:
             fi
           fi
       - name: Persist prepared report and retry key before sending
-        if: always()
+        if: always() && steps.delivery.outcome == 'success' && steps.delivery.outputs.already_sent != 'true'
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
@@ -117,7 +139,7 @@ jobs:
             git -C state-checkout push origin HEAD:refs/heads/screener-data
           fi
       - name: LINE push
-        if: success() && steps.analysis.outputs.report_ready == 'true' && (inputs.send_line == true || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true'))
+        if: success() && steps.analysis.outputs.report_ready == 'true' && ((inputs.send_line == true && (inputs.scheduler != 'cloudflare' || vars.LINE_ENABLED == 'true')) || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true'))
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}

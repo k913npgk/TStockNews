@@ -13,3 +13,7 @@ test-state/
 state-checkout/
 warmup-state/
 *.log
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "tstocknews-scheduler",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "GITHUB_REPOSITORY": "k913npgk/TStockNews",
+    "DISPATCH_ENABLED": "true"
+  },
+  "triggers": {
+    "crons": ["7 13 * * *", "20 13 * * *", "30 13 * * *"]
+  },
+  "observability": { "enabled": true }
+}
