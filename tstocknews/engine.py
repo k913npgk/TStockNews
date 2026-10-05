@@ -272,7 +272,7 @@ def screen(
         })
 
     candidates.sort(key=lambda c: (
-        -(c["institutional_buy_volume_ratio"] if c["institutional_buy_volume_ratio"] is not None else float("-inf")),
+        -c["institutional_net_buy_shares_3d_sum"],
         -(c["revenue_yoy_3m"] if c["revenue_yoy_3m"] is not None else float("-inf")),
         -c["macd_dif_slope_3_sessions"], c["symbol"], c["market"],
     ))
