@@ -20,3 +20,4 @@ while read local_ref local_sha remote_ref remote_sha; do
 done
 python -B -m unittest discover -s tests -v
 node --test cloudflare/worker.test.mjs
+npm --prefix cloudflare run test:runtime

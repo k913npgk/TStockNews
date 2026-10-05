@@ -101,7 +101,7 @@ test("21:30 reports missing delivery even for successful or active workflows; ne
 });
 
 test("API/auth/schema failures stop before dispatch and do not leak response bodies", async () => {
-  for (const code of [401, 403, 429, 500]) {
+  for (const code of [301, 307, 401, 403, 429, 500]) {
     await assert.rejects(tick(event("7 13 * * *"), env, {
       fetchFn: async () => new Response("sensitive-response", { status: code }), log: () => {},
     }), error => !error.message.includes("sensitive-response") && error.message.includes(String(code)));

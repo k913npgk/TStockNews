@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test worker.test.mjs",
+    "test:runtime": "node --test tests/runtime.test.mjs",
     "deploy": "wrangler deploy",
     "deploy:disabled": "wrangler deploy --var DISPATCH_ENABLED:false",
     "deploy:check": "wrangler deploy --dry-run",

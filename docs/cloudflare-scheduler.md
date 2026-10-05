@@ -46,7 +46,7 @@ npm --prefix cloudflare run deploy
 
 確認 Cloudflare dashboard 的 Worker `tstocknews-scheduler` 有三個 Cron Triggers、`GITHUB_TOKEN` Secret、`DISPATCH_ENABLED=true`、Observability logs。Cron 變更可能需 [最多 15 分鐘傳播](https://developers.cloudflare.com/workers/configuration/cron-triggers/)。
 
-在首日 Cron Events／GitHub Actions 驗收後，切换主排程：
+核對部署的 Secret、Cron、啟用開關及遠端 scheduled handler 查核通過後，切換主排程；首日仍需從 Cron Events／GitHub Actions 核對自動觸發與正式送達：
 
 ```powershell
 gh variable set SCHEDULER_PROVIDER --body cloudflare
@@ -61,6 +61,7 @@ gh variable set SCHEDULER_PROVIDER --body cloudflare
 ```powershell
 python -B -m unittest discover -s tests -v
 node --test cloudflare/worker.test.mjs
+npm --prefix cloudflare run test:runtime
 gh run list --workflow daily.yml --limit 10
 ```
 

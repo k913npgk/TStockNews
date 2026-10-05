@@ -31,7 +31,9 @@ async function github(env, path, { method = "GET", payload, missing = false } = 
     },
     ...(payload ? { body: JSON.stringify(payload) } : {}),
     signal: AbortSignal.timeout(15000),
-    redirect: "error",
+    // Workers supports follow/manual, not Node's redirect:"error". Reject 3xx
+    // below instead of forwarding Authorization to a redirected endpoint.
+    redirect: "manual",
   });
   if (response.status === 404 && missing) return null;
   if (!response.ok) {
