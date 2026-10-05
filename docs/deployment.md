@@ -1,5 +1,7 @@
 # GitHub Actions 與 LINE 設定
 
+Cloudflare 外部排程、查核與切換方式見 [Cloudflare 排程配置](cloudflare-scheduler.md)。在 Cloudflare 部署驗收並設定 `SCHEDULER_PROVIDER=cloudflare` 前，原 GitHub cron 繼續有效。
+
 ## 現在可以驗證什麼
 
 目前已有兩市場資料收集、KD／MACD、五項篩選、前二十排序、不可改寫的每日推薦、交易日價格追蹤、報告、LINE 剩餘額度與重試檢查。
