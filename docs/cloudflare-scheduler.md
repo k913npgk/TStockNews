@@ -34,11 +34,12 @@ Cloudflare Worker 只負責觸發與讀取執行結果；股票資料收集、�
 先將程式透過通過 CI 的 PR 合併 main，保留原 GitHub cron。以下 PowerShell 指令在專案根目錄執行：
 
 ```powershell
-npx --yes wrangler@4 login
-npx --yes wrangler@4 deploy --config cloudflare/wrangler.jsonc --dry-run
-npx --yes wrangler@4 deploy --config cloudflare/wrangler.jsonc --var DISPATCH_ENABLED:false
-npx --yes wrangler@4 secret put GITHUB_TOKEN --config cloudflare/wrangler.jsonc
-npx --yes wrangler@4 deploy --config cloudflare/wrangler.jsonc
+npm --prefix cloudflare ci
+npm --prefix cloudflare run login
+npm --prefix cloudflare run deploy:check
+npm --prefix cloudflare run deploy:disabled
+npm --prefix cloudflare run secret:github
+npm --prefix cloudflare run deploy
 ```
 
 `secret put` 使用隱藏輸入貼 PAT。若 Cloudflare 帳戶有多個 account，先指定部署 account；account ID 可透過本機 `CLOUDFLARE_ACCOUNT_ID` 環境變數指定，不需要寫入版本控制。登入與 Secret 必須在部署前可用。沒有 Secret 時不得切換。
