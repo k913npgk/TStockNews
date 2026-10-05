@@ -153,6 +153,32 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["diagnostics"]["exclusion_counts"]["CORPORATE_ACTION_UNRESOLVED"], 1)
 
+    def test_net_buy_ranking_overrides_ratio_and_preserves_revenue_ties(self):
+        sessions = weekdays(125)
+        universe, px, fundamentals, inst = [], [], [], []
+        # 1001 has the highest ratio; 1003 has the highest revenue. Absolute
+        # three-session net buys must win first, then revenue breaks the tie.
+        for symbol, volume, net, revenue in [
+            ("1001", 2_000_000, 100_000, .9),
+            ("1002", 10_000_000, 200_000, .2),
+            ("1003", 20_000_000, 200_000, .3),
+        ]:
+            universe.append({"symbol": symbol, "market": "twse"})
+            px.extend(bars(symbol=symbol, sessions=sessions, volume=volume))
+            fundamentals.append({"symbol": symbol, "market": "twse", "eps": 1,
+                                 "revenue_yoy_3m": revenue, "available_date": sessions[-1]})
+            inst.extend({"date": ds, "symbol": symbol, "market": "twse", "net_buy_shares": net}
+                        for ds in sessions[-3:])
+        first = screen(sessions[-1], sessions, universe, px, fundamentals, inst)
+        second = screen(sessions[-1], list(reversed(sessions)), list(reversed(universe)),
+                        list(reversed(px)), list(reversed(fundamentals)), list(reversed(inst)))
+        self.assertEqual(first, second)
+        self.assertEqual([r["symbol"] for r in first["candidates"]], ["1003", "1002", "1001"])
+        self.assertEqual([r["institutional_net_buy_shares_3d_sum"] for r in first["candidates"]],
+                         [600_000, 600_000, 300_000])
+        self.assertGreater(first["candidates"][-1]["institutional_buy_volume_ratio"],
+                           first["candidates"][0]["institutional_buy_volume_ratio"])
+
     def test_ranking_is_deterministic_and_caps_at_twenty(self):
         sessions = weekdays(125)
         universe = []
