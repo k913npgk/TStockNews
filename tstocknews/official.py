@@ -18,6 +18,7 @@ TAIPEI = timezone(timedelta(hours=8))
 # Keep evidence with the date; missing quotes alone never establish a closure.
 KNOWN_EXTRA_CLOSURES = {
     "2026-07-10": "https://www.emega.com.tw/emegaTran/bulletin.do?id=20260709085742643431",
+    "2026-10-23": "user-confirmed:2026-10-23-typhoon-closure",
 }
 
 

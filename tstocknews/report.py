@@ -20,8 +20,12 @@ def daily_change_pct(value):
 
 
 def render(day, result, performance, strategy, include_performance=True):
-    lines = [f"📊 台股每日篩選｜{day}",
-             f"今日符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
+    lines = [f"📊 台股每日篩選｜{day}"]
+    if result.get("approved_formal_catchup"):
+        lines += [f"實際補跑時間：{result['generated_at']}",
+                  f"財報／營收取得日：{result['financial_snapshot_date']}",
+                  "本次經核准使用較晚取得的財務資料。", ""]
+    lines += [f"今日符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
     for i, row in enumerate(result["candidates"], 1):
         rank = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"[i - 1] if i <= 20 else str(i)
         lines += [f"{rank} {row.get('name', '')}（{row['symbol']}）",
