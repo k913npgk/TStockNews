@@ -69,7 +69,7 @@ class PreviewTests(unittest.TestCase):
             company = {'market': 'twse', 'symbol': '2330', 'name': 'Test'}
             write(root / 'financials' / (day + '.json.gz'), {'observed_date': day,
                   'universe': [company], 'fundamentals': [{**company, 'eps': 1,
-                  'revenue_yoy_3m': .2, 'available_date': day, 'fiscal_period': '2025-Q1'}]})
+                  'revenue_yoy_3m': .2, 'revenue_yoy_prev_3m': .1, 'available_date': day, 'fiscal_period': '2025-Q1'}]})
         write(root / 'status.json', {'status': 'production'})
         write(root / 'error.json', {'error': 'preserve'})
         write(root / 'recommendations' / (day + '.json'), {'signals': [{'production': True}]})
@@ -125,6 +125,7 @@ class PreviewTests(unittest.TestCase):
             before = files(source)
             runtime = {'observed_date': '2026-10-03', 'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}],
                        'fundamentals': [{'symbol': '2330', 'market': 'twse', 'eps': 1, 'revenue_yoy_3m': .2,
+                                         'revenue_yoy_prev_3m': .1,
                                          'available_date': '2026-10-03', 'fiscal_period': '2026-Q2'}]}
             with patch('tstocknews.preview.today', return_value=date(2026, 10, 3)), \
                  patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
@@ -142,6 +143,27 @@ class PreviewTests(unittest.TestCase):
             self.assertFalse((runs / 'missing/data/performance').exists())
             text = (runs / 'missing/reports' / (day + '.md')).read_text(encoding='utf-8')
             self.assertIn('不是目標日當時資訊的歷史重現', text)
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_old_snapshot_without_c5_uses_isolated_runtime_snapshot(self, calendar):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
+            day = self.seed(source)
+            path = source / 'financials' / (day + '.json.gz')
+            old = read(path)
+            old['fundamentals'][0].pop('revenue_yoy_prev_3m')
+            write(path, old)
+            before = files(source)
+            runtime = {**old, 'observed_date': '2026-10-29',
+                       'fundamentals': [{**old['fundamentals'][0], 'revenue_yoy_prev_3m': .1,
+                                         'available_date': '2026-10-29'}]}
+            with patch('tstocknews.preview.today', return_value=date(2026, 10, 29)), \
+                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
+                result = preview(source, runs, 'c5-upgrade', day)
+            fetch.assert_called_once()
+            self.assertEqual(result['selected'], 1)
+            self.assertEqual(result['financial_observed_date'], '2026-10-29')
+            self.assertEqual(files(source), before)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
     def test_future_dated_financial_row_fails_without_production_write(self, calendar):

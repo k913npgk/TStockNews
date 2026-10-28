@@ -280,11 +280,39 @@ def month_offset(day, offset):
     return n // 12, n % 12 + 1
 
 
+def revenue_windows(revenue, key, day):
+    """Keep the latest complete current window; never move it to hide a bad prior window."""
+    end = next((latest for latest in (-1, -2)
+                if all((*key, *month_offset(day, latest - d)) in revenue for d in range(3))), None)
+    if end is None:
+        return {"revenue_yoy_3m": None, "revenue_yoy_prev_3m": None,
+                "revenue_growth_acceleration": None, "revenue_end_month": None,
+                "revenue_months": [], "revenue_data_status": "INCOMPLETE"}
+    months = [month_offset(day, end - d) for d in range(6)]
+    values = [revenue.get((*key, y, m)) for y, m in months]
+    def growth(window):
+        if any(v is None or any(number(n) is None for n in v) for v in window):
+            return None
+        base = sum(v[1] for v in window)
+        return number(sum(v[0] for v in window) / base - 1) if base > 0 else None
+    current, prior = growth(values[:3]), growth(values[3:])
+    acceleration = number(current - prior) if current is not None and prior is not None else None
+    return {"revenue_yoy_3m": current, "revenue_yoy_prev_3m": prior,
+            "revenue_growth_acceleration": acceleration,
+            "revenue_end_month": f"{months[0][0]}-{months[0][1]:02d}",
+            "revenue_months": [{"month": f"{y}-{m:02d}",
+                                "current": v[0] if v is not None else None,
+                                "prior_year": v[1] if v is not None else None}
+                               for (y, m), v in zip(months, values)],
+            "revenue_data_status": "COMPLETE" if acceleration is not None else "INCOMPLETE_OR_CONFLICT"}
+
+
 def universe_and_financials(client, as_of):
     # Snapshot is available only from the day we first observed it, not its fiscal period.
     observed = today().isoformat()
     if as_of != observed:
         raise SourceError("Latest financial snapshots cannot be used to generate historical recommendations")
+    day = date.fromisoformat(as_of)
     universe, eps_map, revenue = ordinary_universe(client), {}, {}
     for market, prefix, company_endpoint, sector_prefix in (
         ("twse", "https://openapi.twse.com.tw/v1/opendata/", "t187ap03_L", "t187ap06_L_"),
@@ -315,9 +343,9 @@ def universe_and_financials(client, as_of):
                 if existing and existing["fiscal_period"] == period and existing["eps"] != value["eps"]:
                     raise SourceError("Conflicting EPS for the same fiscal period")
                 eps_map[(market, symbol)] = value
-        # Four completed months allow late reporters to use their latest complete 3-month window.
-        for offset in (-1, -2, -3, -4):
-            year, month = month_offset(today(), offset)
+        # Seven months support two non-overlapping 3-month windows and late reporters.
+        for offset in range(-1, -8, -1):
+            year, month = month_offset(day, offset)
             for category in (0, 1):
                 url = f"https://mopsov.twse.com.tw/nas/t21/{'sii' if market == 'twse' else 'otc'}/t21sc03_{year - 1911}_{month}_{category}.html"
                 # The immediately previous month may not be published yet. It is unavailable,
@@ -335,29 +363,25 @@ def universe_and_financials(client, as_of):
                     if len(cells) < 5 or cells[0] not in codes:
                         continue
                     current, previous = number(cells[2]), number(cells[4])
-                    if current is None or previous is None:
-                        continue
-                    revenue[(market, cells[0], year, month)] = (current, previous)
+                    key = (market, cells[0], year, month)
+                    value = (current, previous)
+                    # Conflicts stay unknown even if a later duplicate repeats a value.
+                    if key in revenue and revenue[key] != value:
+                        revenue[key] = None
+                    else:
+                        revenue[key] = value
                     matched += 1
                 if not matched and offset != -1 and category == 0:
                     raise SourceError("Historical revenue table missing or schema changed")
     fundamentals = []
     for company in universe:
         key = (company["market"], company["symbol"])
-        ratio, end_month = None, None
-        for latest in (-1, -2):
-            months = [month_offset(today(), latest - delta) for delta in range(3)]
-            values = [revenue.get((*key, y, m)) for y, m in months]
-            if all(v is not None for v in values):
-                prior = sum(v[1] for v in values)
-                ratio = sum(v[0] for v in values) / prior - 1 if prior > 0 else None
-                end_month = f"{months[0][0]}-{months[0][1]:02d}"
-                break
         fundamentals.append({**company, **eps_map.get(key, {"eps": None, "fiscal_period": ""}),
-                             "revenue_yoy_3m": ratio, "revenue_end_month": end_month,
+                             **revenue_windows(revenue, key, day),
                              "available_date": observed, "operating_cash_flow": None,
                              "cash_flow_status": "SOURCE_NOT_IMPLEMENTED"})
     return {"universe": universe, "fundamentals": fundamentals, "observed_date": observed,
+            "revenue_schema_version": "six-month-windows-v1",
             "source_audit": list(client.audit)}
 
 

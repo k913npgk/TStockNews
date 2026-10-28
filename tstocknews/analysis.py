@@ -1,8 +1,13 @@
 """One recommendation builder for production and isolated tests."""
 from . import STRATEGY_VERSION
-from .engine import MIN_HISTORY_SESSIONS, screen
+from .engine import MIN_HISTORY_SESSIONS, _float, screen
 from .official import SourceError
 from .storage import digest
+
+
+def supports_revenue_acceleration(financial):
+    rows = financial.get("fundamentals", [])
+    return bool(rows) and all("revenue_yoy_prev_3m" in row for row in rows)
 
 
 def recommendations(day, sessions, prices, institutions, financial, *, test_run_id=None):
@@ -16,6 +21,9 @@ def recommendations(day, sessions, prices, institutions, financial, *, test_run_
         rows = [r for r in financial["fundamentals"] if r["market"] == market]
         if not any(r.get("eps") is not None for r in rows) or not any(r.get("revenue_yoy_3m") is not None for r in rows):
             raise SourceError(f"{market} financial source has no usable EPS or revenue observations")
+        if not any(_float(r.get("revenue_yoy_3m")) is not None
+                   and _float(r.get("revenue_yoy_prev_3m")) is not None for r in rows):
+            raise SourceError(f"{market} financial source has no usable revenue acceleration observations")
     # Explicit test-only runtime cutoff; original publication/observation fields stay intact.
     financial_cutoff = max(day, observed) if test_run_id else day
     result = screen(day, used_sessions, financial["universe"], used_prices,

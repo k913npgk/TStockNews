@@ -121,6 +121,7 @@ def screen(
     diagnostics: dict[str, Any] = {
         "as_of": as_of,
         "fundamental_as_of": financial_cutoff,
+        "revenue_acceleration_rule": "revenue_yoy_3m - revenue_yoy_prev_3m > 0",
         "calendar_sessions_available": len(ordered_sessions),
         "minimum_history_sessions": MIN_HISTORY_SESSIONS,
         "kd_rule": {"pre_cross_max_gap": KD_PRE_CROSS_MAX_GAP,
@@ -215,12 +216,20 @@ def screen(
         fund = available_fundamentals[-1] if available_fundamentals else None
         eps = _float(fund.get("eps")) if fund else None
         revenue = _float(fund.get("revenue_yoy_3m")) if fund else None
+        previous_revenue = _float(fund.get("revenue_yoy_prev_3m")) if fund else None
+        acceleration = (_float(revenue - previous_revenue)
+                        if revenue is not None and previous_revenue is not None else None)
         if fund is None:
             reasons.append("NO_AVAILABLE_FUNDAMENTAL")
         elif eps is None or eps <= 0:
             reasons.append("EPS_NOT_POSITIVE")
         if fund is not None and (revenue is None or revenue <= 0):
             reasons.append("REVENUE_GROWTH_NOT_POSITIVE")
+        if fund is not None:
+            if acceleration is None:
+                reasons.append("REVENUE_ACCELERATION_UNKNOWN")
+            elif acceleration <= 0:
+                reasons.append("REVENUE_NOT_ACCELERATING")
         if not kd["kd_window_pass"]:
             reasons.append("KD_OUTSIDE_CROSS_WINDOW")
         if not (latest_dif > latest_dea and dif_rising):
@@ -242,6 +251,7 @@ def screen(
             "fundamental_available_date": fund.get("available_date") if fund else None,
             "fiscal_period": fund.get("fiscal_period") if fund else None,
             "eps": eps, "revenue_yoy_3m": revenue,
+            "revenue_yoy_prev_3m": previous_revenue, "revenue_growth_acceleration": acceleration,
         })
         if reasons:
             for reason in set(reasons):
@@ -255,6 +265,9 @@ def screen(
             "price_change": _float(streak[-1].get("price_change")),
             "price_change_pct": _float(streak[-1].get("price_change_pct")),
             "volume_shares": volume, "eps": eps, "revenue_yoy_3m": revenue,
+            "revenue_yoy_prev_3m": previous_revenue, "revenue_growth_acceleration": acceleration,
+            "revenue_months": fund.get("revenue_months", []),
+            "revenue_data_status": fund.get("revenue_data_status"),
             "fundamental_available_date": fund.get("available_date") if fund else None,
             "fiscal_period": fund.get("fiscal_period") if fund else None,
             "kd_k": ind["k"][last_i], "kd_d": ind["d"][last_i],

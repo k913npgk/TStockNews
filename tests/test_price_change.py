@@ -68,7 +68,7 @@ class OfficialPriceChangeTests(unittest.TestCase):
                 row.update({"price_change": 2.0, "price_change_pct": 2 / 128})
             prices.append(row)
         fundamentals = [{"symbol": "2330", "market": "twse", "eps": 1,
-                         "revenue_yoy_3m": .2, "available_date": sessions[-1], "fiscal_period": "2025Q1"}]
+                         "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1, "available_date": sessions[-1], "fiscal_period": "2025Q1"}]
         institutional = [{"date": day, "symbol": "2330", "market": "twse", "net_buy_shares": 25_000}
                          for day in sessions[-3:]]
         result = screen(sessions[-1], sessions, [{"symbol": "2330", "market": "twse", "name": "Test"}],
