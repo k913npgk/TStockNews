@@ -1,5 +1,5 @@
 {
   "date": "2026-10-28",
-  "message": "Official ordinary-share classification unavailable",
+  "message": "twse quote date mismatch: 2026-10-23",
   "type": "SourceError"
 }
