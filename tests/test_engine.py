@@ -96,7 +96,7 @@ class ScreenTests(unittest.TestCase):
         target = sessions[-2]
         px = bars(sessions=sessions)
         fund = [{"symbol": "2330", "market": "twse", "eps": 1,
-                 "revenue_yoy_3m": .2, "available_date": target}]
+                 "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1, "available_date": target}]
         inst = [{"date": ds, "symbol": "2330", "market": "twse", "net_buy_shares": 1000}
                 for ds in sessions[-4:-1]]
         for tail, d_tail, stage in [([44, 45, 46, 47], [50] * 4, "PRE_CROSS"),
@@ -124,6 +124,7 @@ class ScreenTests(unittest.TestCase):
         ]
         fundamentals = [
             {"symbol": "2330", "market": "twse", "eps": 1.0, "revenue_yoy_3m": 0.2,
+             "revenue_yoy_prev_3m": .1,
              "available_date": sessions[-1], "fiscal_period": "2025Q1"},
             # Newer row published after as_of must never replace the available snapshot.
             {"symbol": "2330", "market": "twse", "eps": -9.0, "revenue_yoy_3m": -0.5,
@@ -166,7 +167,7 @@ class ScreenTests(unittest.TestCase):
             universe.append({"symbol": symbol, "market": "twse"})
             px.extend(bars(symbol=symbol, sessions=sessions, volume=volume))
             fundamentals.append({"symbol": symbol, "market": "twse", "eps": 1,
-                                 "revenue_yoy_3m": revenue, "available_date": sessions[-1]})
+                                 "revenue_yoy_3m": revenue, "revenue_yoy_prev_3m": .1, "available_date": sessions[-1]})
             inst.extend({"date": ds, "symbol": symbol, "market": "twse", "net_buy_shares": net}
                         for ds in sessions[-3:])
         first = screen(sessions[-1], sessions, universe, px, fundamentals, inst)
@@ -187,7 +188,7 @@ class ScreenTests(unittest.TestCase):
             symbol = f"{1000 + i:04d}"
             universe.append({"symbol": symbol, "market": "twse", "name": symbol})
             px.extend(bars(symbol=symbol, sessions=sessions, volume=2_500_000))
-            fundamentals.append({"symbol": symbol, "market": "twse", "eps": 1, "revenue_yoy_3m": 0.2, "available_date": sessions[-1], "fiscal_period": "2025Q1"})
+            fundamentals.append({"symbol": symbol, "market": "twse", "eps": 1, "revenue_yoy_3m": 0.2, "revenue_yoy_prev_3m": .1, "available_date": sessions[-1], "fiscal_period": "2025Q1"})
             inst.extend({"date": ds, "symbol": symbol, "market": "twse", "net_buy_shares": (i + 1) * 1000} for ds in sessions[-3:])
         first = screen(sessions[-1], sessions, universe, px, fundamentals, inst)
         second = screen(sessions[-1], sessions, universe, px, fundamentals, inst)

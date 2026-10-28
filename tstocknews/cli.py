@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 from . import STRATEGY_VERSION
-from .analysis import recommendations
+from .analysis import recommendations, supports_revenue_acceleration
 from .engine import track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
 from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
@@ -55,6 +55,15 @@ def daily(root, report_root, day):
     if result and (result.get("test_only") or result.get("excluded_from_performance")):
         raise ValueError("Test recommendations cannot be reused by the production pipeline")
     if result is None:
+        if not supports_revenue_acceleration(financial):
+            # Preserve the old snapshot. Newly observed data can only upgrade today's inputs.
+            upgraded_path = root / "financials" / (day + "-c5.json.gz")
+            financial = read(upgraded_path)
+            if financial is None:
+                if day != today().isoformat():
+                    raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
+                financial = universe_and_financials(Client(root), day)
+                write(upgraded_path, financial)
         result = recommendations(day, sessions, prices, institutions, financial)
         write(result_path, result)
     signals = []
@@ -71,6 +80,7 @@ def daily(root, report_root, day):
     if not report_path.exists():
         report_path.write_text(render(day, result, performance, STRATEGY_VERSION), encoding="utf-8")
     status = {"date": day, "status": "REPORT_READY", "eligible_count": result["eligible_count"],
+              "strategy_version": result.get("strategy_version"),
               "selected": len(result["candidates"]), "report": str(report_path)}
     write(root / "status.json", status)
     return status

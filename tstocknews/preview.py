@@ -5,7 +5,7 @@ import re
 import shutil
 
 from . import STRATEGY_VERSION
-from .analysis import recommendations
+from .analysis import recommendations, supports_revenue_acceleration
 from .engine import MIN_HISTORY_SESSIONS
 from .official import Client, SourceError, extra_closures, holiday_days, quote_rows, sync, today, universe_and_financials
 from .report import render
@@ -119,6 +119,8 @@ def preview(source, runs, run_id, requested):
         if value.get("observed_date", path.name[:10]) <= target:
             if value.get("observed_date", path.name[:10]) != path.name[:10]:
                 raise SourceError("Financial snapshot filename/observation date mismatch")
+            if not supports_revenue_acceleration(value):
+                continue
             financial = value
             break
     if financial is None:
@@ -173,7 +175,9 @@ def preview(source, runs, run_id, requested):
                 "next_trading_day": next_day, "warmup_sessions": len(sessions),
                 "financial_coverage": {market: {"universe": sum(r["market"] == market for r in financial["universe"]),
                     "eps": sum(r["market"] == market and r.get("eps") is not None for r in financial["fundamentals"]),
-                    "revenue": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None for r in financial["fundamentals"])}
+                    "revenue": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None for r in financial["fundamentals"]),
+                    "revenue_acceleration": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None
+                                                and r.get("revenue_yoy_prev_3m") is not None for r in financial["fundamentals"])}
                     for market in ("twse", "tpex")},
                 "recommendations": str(data / "recommendations" / (target + ".json")) if result else None,
                 "report_hash": digest(text), "input_hash": digest({"prices": prices, "institutions": institutions, "financial": financial})}

@@ -161,7 +161,7 @@ class PipelineTests(unittest.TestCase):
         day = sessions[-1]
         universe = [{"symbol": "2330", "market": "twse", "name": "Test"}]
         financial = {"universe": universe, "fundamentals": [{**universe[0], "eps": 1,
-                       "revenue_yoy_3m": .2, "available_date": day, "fiscal_period": "2025-Q1"}]}
+                       "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1, "available_date": day, "fiscal_period": "2025-Q1"}]}
         with tempfile.TemporaryDirectory() as tmp:
             root, reports = Path(tmp) / "data", Path(tmp) / "reports"
             for px in bars(sessions=sessions):
