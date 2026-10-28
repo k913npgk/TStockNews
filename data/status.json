@@ -1,4 +1,11 @@
 {
-  "date": "2026-10-26",
-  "status": "NON_TRADING_DAY"
+  "approved_formal_catchup": true,
+  "date": "2026-10-28",
+  "eligible_count": 11,
+  "financial_snapshot_date": "2026-10-29",
+  "generated_at": "2026-10-29T00:23:11.293402+08:00",
+  "report": "reports/2026-10-28.md",
+  "selected": 11,
+  "status": "REPORT_READY",
+  "strategy_version": "rules-v6-revenue-acceleration-top20"
 }
