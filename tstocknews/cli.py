@@ -7,6 +7,7 @@ import sys
 
 from . import STRATEGY_VERSION
 from .analysis import recommendations, supports_revenue_acceleration
+from .catchup import validate as validate_catchup
 from .engine import track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
 from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
@@ -24,7 +25,9 @@ def load_history(root):
     return sessions, prices, institutional
 
 
-def daily(root, report_root, day):
+def daily(root, report_root, day, *, late_financial_date=None):
+    if late_financial_date:
+        validate_catchup(day, late_financial_date)
     if day > today().isoformat():
         raise ValueError("Cannot run a future date")
     closures = extra_closures(root)
@@ -32,6 +35,9 @@ def daily(root, report_root, day):
         write(root / "status.json", {"date": day, "status": "NON_TRADING_DAY"})
         return {"date": day, "status": "NON_TRADING_DAY"}
     holidays = holiday_days(Client(root), date.fromisoformat(day).year)
+    if late_financial_date and (late_financial_date in holidays or late_financial_date in closures
+                                or date.fromisoformat(late_financial_date).weekday() >= 5):
+        raise SourceError("Approved catch-up entry day is not an exchange session")
     if day in holidays:
         write(root / "status.json", {"date": day, "status": "NON_TRADING_DAY"})
         return {"date": day, "status": "NON_TRADING_DAY"}
@@ -45,26 +51,30 @@ def daily(root, report_root, day):
                   "command": "python -m tstocknews bootstrap --days 220"}
         write(root / "status.json", status)
         return status
-    snapshot_path = root / "financials" / (day + ".json.gz")
-    if not snapshot_path.exists():
-        financial = universe_and_financials(Client(root), day)
-        write(snapshot_path, financial)
-    financial = read(snapshot_path)
     result_path = root / "recommendations" / (day + ".json")
     result = read(result_path)
     if result and (result.get("test_only") or result.get("excluded_from_performance")):
         raise ValueError("Test recommendations cannot be reused by the production pipeline")
     if result is None:
+        financial_day = late_financial_date or day
+        snapshot_path = root / "financials" / (financial_day + ".json.gz")
+        financial = read(snapshot_path)
+        if financial is None:
+            financial = universe_and_financials(Client(root), financial_day)
+            write(snapshot_path, financial)
         if not supports_revenue_acceleration(financial):
             # Preserve the old snapshot. Newly observed data can only upgrade today's inputs.
-            upgraded_path = root / "financials" / (day + "-c5.json.gz")
+            upgraded_path = root / "financials" / (financial_day + "-c5.json.gz")
             financial = read(upgraded_path)
             if financial is None:
-                if day != today().isoformat():
+                if financial_day != today().isoformat():
                     raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
-                financial = universe_and_financials(Client(root), day)
+                financial = universe_and_financials(Client(root), financial_day)
                 write(upgraded_path, financial)
-        result = recommendations(day, sessions, prices, institutions, financial)
+        result = recommendations(day, sessions, prices, institutions, financial,
+                                 late_financial_date=late_financial_date)
+        if late_financial_date:
+            validate_catchup(day, late_financial_date)
         write(result_path, result)
     signals = []
     for path in sorted((root / "recommendations").glob("*.json")):
@@ -78,9 +88,13 @@ def daily(root, report_root, day):
     report_path = report_root / (day + ".md")
     # Immutable message content is essential for LINE's request retry semantics.
     if not report_path.exists():
+        if result.get("approved_formal_catchup"):
+            validate_catchup(day, result["financial_snapshot_date"])
         report_path.write_text(render(day, result, performance, STRATEGY_VERSION), encoding="utf-8")
     status = {"date": day, "status": "REPORT_READY", "eligible_count": result["eligible_count"],
               "strategy_version": result.get("strategy_version"),
+              **({key: result[key] for key in ("approved_formal_catchup", "generated_at", "financial_snapshot_date")}
+                 if result.get("approved_formal_catchup") else {}),
               "selected": len(result["candidates"]), "report": str(report_path)}
     write(root / "status.json", status)
     return status
@@ -118,6 +132,8 @@ def main(argv=None):
         if name == "send":
             p.add_argument("--require-sent", action="store_true", help="Fail Actions if delivery was blocked")
         if name == "daily":
+            p.add_argument("--late-financial-date", default=None,
+                           help="Only the approved 2026-10-28/29 pre-open catch-up; original dates retained")
             p.add_argument("--require-report", action="store_true", help="Fail trading-day runs without a ready report")
     test = sub.add_parser("test-report", help="Isolated Actions/LINE preview; never creates production signals")
     test.add_argument("--date", default=None)
@@ -153,7 +169,7 @@ def main(argv=None):
             output = {"status": "BOOTSTRAP_COMPLETE", "sessions": len(sessions), "end": end}
             write(root / "status.json", output)
         elif args.command == "daily":
-            output = daily(root, reports, day)
+            output = daily(root, reports, day, late_financial_date=args.late_financial_date)
             if args.require_report and output["status"] not in ("REPORT_READY", "NON_TRADING_DAY"):
                 print(json.dumps(output, ensure_ascii=False))
                 return 1

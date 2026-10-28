@@ -18,6 +18,10 @@ on:
         description: 'Send the prepared report to LINE (default is preview only)'
         type: boolean
         default: false
+      late_financial_date:
+        description: 'Approved catch-up only: 2026-10-29 financial snapshot for 2026-10-28, before 09:00 Taipei'
+        type: string
+        default: ''
       scheduler:
         description: 'Trigger source; Cloudflare automation also respects LINE_ENABLED'
         type: choice
@@ -103,11 +107,16 @@ jobs:
         env:
           MODE: ${{ inputs.mode || 'daily' }}
           TARGET_DATE: ${{ steps.date.outputs.value }}
+          LATE_FINANCIAL_DATE: ${{ inputs.late_financial_date }}
         run: |
           if [ "$MODE" = bootstrap ]; then
             python -B -m tstocknews bootstrap --days 220 --end "$TARGET_DATE"
           else
-            python -B -m tstocknews daily --date "$TARGET_DATE" --require-report
+            ARGS=(daily --date "$TARGET_DATE" --require-report)
+            if [ -n "$LATE_FINANCIAL_DATE" ]; then
+              ARGS+=(--late-financial-date "$LATE_FINANCIAL_DATE")
+            fi
+            python -B -m tstocknews "${ARGS[@]}"
             python - <<'PY'
           import json, os
           from pathlib import Path
