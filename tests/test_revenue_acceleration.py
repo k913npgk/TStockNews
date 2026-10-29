@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_engine import bars, weekdays
+from tests.eps_fixture import ready
 from tstocknews import STRATEGY_VERSION
 from tstocknews.analysis import recommendations
 from tstocknews.cli import daily
@@ -148,7 +149,8 @@ class ProductionC5Tests(unittest.TestCase):
         self.assertEqual(result["eligible_count"], 0)
 
     def test_source_loss_fails_and_real_zero_acceleration_is_valid_zero_candidates(self):
-        financial = {"observed_date": self.day, "universe": [self.company], "fundamentals": [self.fund]}
+        financial = ready({"observed_date": self.day, "universe": [self.company], "fundamentals": [self.fund]},
+                          target=self.day)
         broken = copy.deepcopy(financial)
         broken["fundamentals"][0].pop("revenue_yoy_prev_3m")
         with self.assertRaisesRegex(SourceError, "no usable revenue acceleration"):
@@ -157,11 +159,12 @@ class ProductionC5Tests(unittest.TestCase):
         self.assertEqual(recommendations(self.day, self.sessions, self.prices, self.inst, financial)["eligible_count"], 0)
 
     def test_versioned_signals_keep_evidence_and_isolated_tests_match_production(self):
-        financial = {"observed_date": self.day, "universe": [self.company], "fundamentals": [self.fund]}
+        financial = ready({"observed_date": self.day, "universe": [self.company], "fundamentals": [self.fund]},
+                          target=self.day)
         normal = recommendations(self.day, self.sessions, self.prices, self.inst, financial)
         test = recommendations(self.day, self.sessions, self.prices, self.inst, financial, test_run_id="c5")
         self.assertEqual(normal["candidates"], test["candidates"])
-        self.assertEqual(normal["strategy_version"], "rules-v6-revenue-acceleration-top20")
+        self.assertEqual(normal["strategy_version"], STRATEGY_VERSION)
         self.assertTrue(normal["signals"][0]["signal_id"].startswith(STRATEGY_VERSION + ":"))
         self.assertAlmostEqual(normal["signals"][0]["revenue_growth_acceleration"], .1)
         self.assertTrue(test["signals"][0]["test_only"])
@@ -181,7 +184,8 @@ class ProductionC5Tests(unittest.TestCase):
             upgraded = {**old, "fundamentals": [self.fund]}
             with patch("tstocknews.cli.today", return_value=date.fromisoformat(self.day)), \
                  patch("tstocknews.cli.holiday_days", return_value=set()), patch("tstocknews.cli.sync"), \
-                 patch("tstocknews.cli.universe_and_financials", return_value=upgraded) as fetch:
+                 patch("tstocknews.cli.universe_and_financials", return_value=upgraded) as fetch, \
+                 patch("tstocknews.cli.prepare_eps", side_effect=lambda *args: ready(args[-1], target=args[1])):
                 self.assertEqual(daily(root, reports, self.day)["selected"], 1)
                 fetch.assert_called_once()
                 self.assertEqual(path.read_bytes(), before)

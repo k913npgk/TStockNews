@@ -11,6 +11,7 @@ from tstocknews.line import prepare, send
 from tstocknews.official import SourceError, RevenueTable, inst_rows, quote_rows, month_offset, sync
 from tstocknews.storage import read, write
 from tests.test_engine import weekdays, bars
+from tests.eps_fixture import ready
 
 
 class AdapterTests(unittest.TestCase):
@@ -160,8 +161,9 @@ class PipelineTests(unittest.TestCase):
         sessions = weekdays(125)
         day = sessions[-1]
         universe = [{"symbol": "2330", "market": "twse", "name": "Test"}]
-        financial = {"universe": universe, "fundamentals": [{**universe[0], "eps": 1,
-                       "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1, "available_date": day, "fiscal_period": "2025-Q1"}]}
+        financial = ready({"observed_date": day, "universe": universe, "fundamentals": [
+                       {**universe[0], "eps": 1, "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1,
+                        "available_date": day, "fiscal_period": "2025-Q1"}]}, target=day)
         with tempfile.TemporaryDirectory() as tmp:
             root, reports = Path(tmp) / "data", Path(tmp) / "reports"
             for px in bars(sessions=sessions):

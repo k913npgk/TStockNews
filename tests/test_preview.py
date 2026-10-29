@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_engine import bars, weekdays
+from tests.eps_fixture import ready
 from tstocknews.cli import main, daily
 from tstocknews.engine import track
 from tstocknews.analysis import recommendations
@@ -67,9 +68,10 @@ class PreviewTests(unittest.TestCase):
                       {'date': px['date'], 'market': 'twse', 'symbol': '2330', 'net_buy_shares': 10000}]})
         if financial:
             company = {'market': 'twse', 'symbol': '2330', 'name': 'Test'}
-            write(root / 'financials' / (day + '.json.gz'), {'observed_date': day,
-                  'universe': [company], 'fundamentals': [{**company, 'eps': 1,
-                  'revenue_yoy_3m': .2, 'revenue_yoy_prev_3m': .1, 'available_date': day, 'fiscal_period': '2025-Q1'}]})
+            financial = ready({'observed_date': day, 'universe': [company], 'fundamentals': [{**company, 'eps': 1,
+                  'revenue_yoy_3m': .2, 'revenue_yoy_prev_3m': .1, 'available_date': day, 'fiscal_period': '2025-Q1'}]},
+                  target=day)
+            write(root / 'financials' / (day + '.json.gz'), financial)
         write(root / 'status.json', {'status': 'production'})
         write(root / 'error.json', {'error': 'preserve'})
         write(root / 'recommendations' / (day + '.json'), {'signals': [{'production': True}]})
@@ -123,10 +125,10 @@ class PreviewTests(unittest.TestCase):
             day = self.seed(source, financial=False)
             write(source / 'financials' / '2026-10-03.json.gz', {'observed_date': '2026-10-03'})
             before = files(source)
-            runtime = {'observed_date': '2026-10-03', 'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}],
+            runtime = ready({'observed_date': '2026-10-03', 'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}],
                        'fundamentals': [{'symbol': '2330', 'market': 'twse', 'eps': 1, 'revenue_yoy_3m': .2,
                                          'revenue_yoy_prev_3m': .1,
-                                         'available_date': '2026-10-03', 'fiscal_period': '2026-Q2'}]}
+                                         'available_date': '2026-10-03', 'fiscal_period': '2026-Q2'}]}, target=day)
             with patch('tstocknews.preview.today', return_value=date(2026, 10, 3)), \
                  patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
                 result = preview(source, runs, 'missing', day)
@@ -158,7 +160,8 @@ class PreviewTests(unittest.TestCase):
                        'fundamentals': [{**old['fundamentals'][0], 'revenue_yoy_prev_3m': .1,
                                          'available_date': '2026-10-29'}]}
             with patch('tstocknews.preview.today', return_value=date(2026, 10, 29)), \
-                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
+                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch, \
+                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
                 result = preview(source, runs, 'c5-upgrade', day)
             fetch.assert_called_once()
             self.assertEqual(result['selected'], 1)

@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_engine import bars
+from tests.eps_fixture import ready
 from tstocknews.analysis import recommendations
 from tstocknews.catchup import validate
 from tstocknews.cli import daily
@@ -27,9 +28,9 @@ class CatchupTests(unittest.TestCase):
             current -= timedelta(days=1)
         sessions.reverse()
         company = {"market": "twse", "symbol": "2330", "name": "Test"}
-        financial = {"observed_date": OBSERVED, "universe": [company], "fundamentals": [
+        financial = ready({"observed_date": OBSERVED, "universe": [company], "fundamentals": [
             {**company, "eps": 1, "revenue_yoy_3m": .2, "revenue_yoy_prev_3m": .1,
-             "available_date": OBSERVED, "fiscal_period": "2026-Q2"}]}
+             "available_date": OBSERVED, "fiscal_period": "2026-Q2"}]}, target=DAY)
         prices = bars(sessions=sessions)
         inst = [{**company, "date": ds, "net_buy_shares": 1000} for ds in sessions[-3:]]
         return sessions, financial, prices, inst
