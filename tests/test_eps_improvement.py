@@ -23,20 +23,23 @@ def pool(financial):
 
 
 def archive(symbols,prior='1'):
-    stream=io.BytesIO()
-    with ZipFile(stream,'w') as z:
-        for symbol in symbols:
-            z.writestr(f'tifrs-ci-cr-{symbol}-2026Q2.html',document([fact('2','cur'),fact(prior,'prior')]))
-    return stream.getvalue()
+    def transport(url):
+        from urllib.parse import urlparse,parse_qs
+        symbol=parse_qs(urlparse(url).query)['CO_ID'][0]
+        body=document([fact('2','cur'),fact(prior,'prior')] if symbol in symbols else [])
+        metadata=''.join(f'<ix:nonNumeric name="tifrs-notes:{k}">{v}</ix:nonNumeric>' for k,v in
+            [('CompanyID',symbol),('Year','2026'),('Quarter','2'),('ReportCategory','Consolidated report')])
+        return body+metadata.encode()
+    return transport
 
 
 class EPSIntegrationTests(unittest.TestCase):
     def test_download_rejects_non_zip_oversize_and_transport_failure(self):
-        for raw in (b'<html>busy</html>',b'PK'+b'0'*10):
-            with patch.object(eps,'urlopen',return_value=io.BytesIO(raw)),patch.object(eps,'MAX_ARCHIVE_BYTES',8):
-                with self.assertRaises(SourceError):eps.download_archive('https://example.test/archive')
+        for raw in (b'',b'0'*10):
+            with patch.object(eps,'urlopen',return_value=io.BytesIO(raw)),patch.object(eps,'MAX_FILING_BYTES',8):
+                with self.assertRaises(SourceError):eps.download_filing('https://example.test/archive')
         with patch.object(eps,'urlopen',side_effect=OSError('unavailable')) as get:
-            with self.assertRaises(SourceError):eps.download_archive('https://example.test/archive')
+            with self.assertRaises(SourceError):eps.download_filing('https://example.test/archive')
             self.assertEqual(get.call_count,1)
 
     def test_source_batch_cache_resume_and_original_financial_immutable(self):
@@ -44,15 +47,15 @@ class EPSIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             with patch.object(eps,'full_c5',return_value=pool(f)),patch.object(eps,'today',return_value=date(2026,10,29)), \
-                 patch.object(eps,'download_archive',return_value=archive(['1000','1001'])) as download:
+                 patch.object(eps,'download_filing',side_effect=archive(['1000','1001'])) as download:
                 result=eps.prepare(root,'2026-10-29',[],[],[],f)
-                self.assertEqual(download.call_count,1)
+                self.assertEqual(download.call_count,2)
                 self.assertTrue(all(r['eps_comparison_status']=='KNOWN' for r in result['fundamentals']))
                 self.assertEqual(result['fundamentals'][0]['eps_prior_ytd'],1)
                 with patch.object(eps,'today',return_value=date(2026,10,30)):
                     resumed=eps.prepare(root,'2026-10-29',[],[],[],f)
                 self.assertEqual(resumed,result)
-                self.assertEqual(download.call_count,1)
+                self.assertEqual(download.call_count,2)
                 self.assertEqual(len(list((root/'eps-filings').rglob('*.gz'))),2)
         self.assertEqual(f,before)
 
@@ -60,13 +63,13 @@ class EPSIntegrationTests(unittest.TestCase):
         for raw in (archive([]),archive(['1001'])):
             f=finance()
             with tempfile.TemporaryDirectory() as tmp,patch.object(eps,'full_c5',return_value=pool(f)), \
-                 patch.object(eps,'today',return_value=date(2026,10,29)),patch.object(eps,'download_archive',return_value=raw):
+                 patch.object(eps,'today',return_value=date(2026,10,29)),patch.object(eps,'download_filing',side_effect=raw):
                 with self.assertRaisesRegex(SourceError,'No C5-eligible'):eps.prepare(Path(tmp),'2026-10-29',[],[],[],f)
 
     def test_current_value_conflict_and_historical_backfill_rejected(self):
         f=finance();f['fundamentals'][0]['eps']=99
         with tempfile.TemporaryDirectory() as tmp,patch.object(eps,'full_c5',return_value=pool(f)), \
-             patch.object(eps,'download_archive',return_value=archive(['1000'])):
+             patch.object(eps,'download_filing',side_effect=archive(['1000'])):
             with self.assertRaisesRegex(SourceError,'No C5-eligible'):eps.prepare(Path(tmp),'2026-10-29',[],[],[],f)
         f['observed_date']='2026-10-28'
         with tempfile.TemporaryDirectory() as tmp,patch.object(eps,'full_c5',return_value=pool(f)):
@@ -75,7 +78,7 @@ class EPSIntegrationTests(unittest.TestCase):
     def test_filter_precedes_top20_and_equal_eps_fails(self):
         f=finance(30)
         with tempfile.TemporaryDirectory() as tmp,patch.object(eps,'full_c5',return_value=pool(f)), \
-             patch.object(eps,'download_archive',return_value=archive([c['symbol'] for c in f['universe']])):
+             patch.object(eps,'download_filing',side_effect=archive([c['symbol'] for c in f['universe']])):
             enriched=eps.prepare(Path(tmp),'2026-10-29',[],[],[],f)
         for r in enriched['fundamentals'][:10]:
             r['eps_prior_ytd']=2;r['eps_comparison']['eps_prior_ytd']=2
@@ -89,7 +92,7 @@ class EPSIntegrationTests(unittest.TestCase):
     def test_late_or_wrong_period_is_excluded_even_with_known_flag(self):
         f=finance()
         with tempfile.TemporaryDirectory() as tmp,patch.object(eps,'full_c5',return_value=pool(f)), \
-             patch.object(eps,'download_archive',return_value=archive(['1000'])):
+             patch.object(eps,'download_filing',side_effect=archive(['1000'])):
             enriched=eps.prepare(Path(tmp),'2026-10-29',[],[],[],f)
         for field,value in [('period_start','2026-04-01'),('prior_period_end','2024-06-30')]:
             altered=deepcopy(enriched);altered['fundamentals'][0]['eps_comparison'][field]=value

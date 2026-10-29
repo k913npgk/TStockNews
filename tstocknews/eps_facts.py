@@ -9,10 +9,76 @@ import hashlib
 import math
 import os
 import re
+from collections import defaultdict
 from typing import Any
 
 
 _BASIC_EPS = "BasicEarningsLossPerShare"
+_FILING_METADATA_NAMES = {"CompanyID", "Year", "Quarter", "ReportCategory"}
+
+
+def _decode_body(body: bytes) -> str:
+    """Decode UTF-8 first; allow CP950 only with an explicit early Big5 label."""
+    try:
+        return body.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError:
+        header = body[:1024].decode("ascii", errors="ignore")
+        if not re.search(r"charset\s*=\s*[\"']?\s*(?:big5|cp950)(?:[\"';\s]|$)", header, re.IGNORECASE):
+            raise
+        return body.decode("cp950", errors="strict")
+
+
+class _FilingMetadataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.values: dict[str, list[str]] = defaultdict(list)
+        self._active: list[dict[str, Any]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if _local(tag.casefold()) != "nonnumeric":
+            return
+        attrs = {key.casefold(): value for key, value in attrs}
+        name = (attrs.get("name") or "").split(":")[-1]
+        if name in _FILING_METADATA_NAMES:
+            self._active.append({"name": name, "text": []})
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_data(self, data: str) -> None:
+        for fact in self._active:
+            fact["text"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if _local(tag.casefold()) == "nonnumeric" and self._active:
+            fact = self._active.pop()
+            self.values[fact["name"]].append("".join(fact["text"]).strip())
+
+
+def identify_filing(body: bytes) -> dict[str, Any] | None:
+    """Read unique filing identity and report scope from exact iXBRL metadata facts."""
+    try:
+        parser = _FilingMetadataParser()
+        parser.feed(_decode_body(body))
+        parser.close()
+    except (UnicodeDecodeError, ValueError):
+        return None
+    values: dict[str, str] = {}
+    for name in _FILING_METADATA_NAMES:
+        found = parser.values.get(name, [])
+        unique = set(found)
+        if not unique or "" in unique or len(unique) != 1:
+            return None
+        values[name] = next(iter(unique))
+    if not re.fullmatch(r"\d+", values["Year"]) or not re.fullmatch(r"\d+", values["Quarter"]):
+        return None
+    category = values["ReportCategory"]
+    if category not in ("Consolidated report", "Individual report"):
+        return None
+    return {"symbol": values["CompanyID"], "year": int(values["Year"]),
+            "quarter": int(values["Quarter"]),
+            "statement_scope": "consolidated" if category == "Consolidated report" else "individual"}
 def _quarter_end(year: int, quarter: int) -> date:
     if quarter not in (1, 2, 3, 4):
         raise ValueError("quarter must be 1, 2, 3, or 4")
@@ -228,7 +294,7 @@ def extract_comparison(body: bytes, *, symbol: str, year: int, quarter: int, mem
         return result
     try:
         parser = _IxbrlParser()
-        parser.feed(body.decode("utf-8-sig", errors="strict"))
+        parser.feed(_decode_body(body))
         parser.close()
     except (UnicodeDecodeError, ValueError):
         result["reason"] = "INVALID_DOCUMENT"

@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 
-from tstocknews.eps_facts import extract_comparison
+from tstocknews.eps_facts import extract_comparison, identify_filing
 
 
 def context(ref, start, end, *, dimensional=False):
@@ -22,6 +22,13 @@ def document(facts, *, units=None, contexts=None):
     units = units or [unit()]
     return ("<html><head><ix:header>" + "".join(contexts + units) + "</ix:header><body>" +
             "".join(facts) + "</body></html>").encode()
+
+
+def metadata(symbol="2344", year="2026", quarter="2", category="Consolidated report"):
+    return (f'<ix:nonNumeric name="tifrs-notes:CompanyID">{symbol}</ix:nonNumeric>'
+            f'<ix:nonNumeric name="tifrs-notes:Year">{year}</ix:nonNumeric>'
+            f'<ix:nonNumeric name="tifrs-notes:Quarter">{quarter}</ix:nonNumeric>'
+            f'<ix:nonNumeric name="tifrs-notes:ReportCategory">{category}</ix:nonNumeric>')
 
 
 class ExtractComparisonTests(unittest.TestCase):
@@ -45,6 +52,53 @@ class ExtractComparisonTests(unittest.TestCase):
         self.assertEqual(result["facts"]["eps_prior_ytd"]["contextRef"], "prior")
         self.assertEqual(result["facts"]["eps_ytd"]["unitRef"], "TWD_PER_SHARE")
         self.assertEqual(result["facts"]["eps_ytd"]["source_member_sha256"], hashlib.sha256(body).hexdigest())
+
+    def test_identify_filing_reads_exact_inline_metadata(self):
+        body = ("<html><head><meta charset='utf-8'></head><body>" + metadata() +
+                '<ix:nonNumeric name="tifrs-notes:CompanyIDAlias">9999</ix:nonNumeric></body></html>').encode()
+        self.assertEqual(identify_filing(body), {"symbol": "2344", "year": 2026, "quarter": 2,
+                                                 "statement_scope": "consolidated"})
+
+    def test_big5_requires_explicit_early_charset_and_extracts_eps(self):
+        text = document([fact("12", "cur"), fact("10", "prior")]).decode().replace(
+            "<html><head>", "<html><head><meta http-equiv='Content-Type' content='text/html; charset=big5'>")
+        text = text.replace("<body>", "<body>" + metadata() + "<div>台灣財務報告</div>")
+        body = text.encode("cp950")
+        result = identify_filing(body)
+        self.assertEqual(result, {"symbol": "2344", "year": 2026, "quarter": 2,
+                                  "statement_scope": "consolidated"})
+        extracted = extract_comparison(body, symbol="2344", year=2026, quarter=2,
+                                       member_name="filing-cr-2344-2026Q2.html")
+        self.assertEqual(extracted["status"], "KNOWN")
+        self.assertEqual((extracted["eps_ytd"], extracted["eps_prior_ytd"]), (12.0, 10.0))
+
+    def test_big5_bytes_without_declared_charset_do_not_fallback(self):
+        body = ("<html><body>台灣" + metadata() + "</body></html>").encode("cp950")
+        self.assertIsNone(identify_filing(body))
+        result = extract_comparison(body, symbol="2344", year=2026, quarter=2,
+                                    member_name="filing-cr-2344-2026Q2.html")
+        self.assertEqual(result["status"], "UNKNOWN")
+        self.assertEqual(result["reason"], "INVALID_DOCUMENT")
+
+    def test_conflicting_or_incomplete_metadata_is_unknown(self):
+        conflicting = ("<html><body>" + metadata() +
+                       '<ix:nonNumeric name="tifrs-notes:Year">2025</ix:nonNumeric></body></html>').encode()
+        missing = ("<html><body>" + metadata().replace(
+            '<ix:nonNumeric name="tifrs-notes:Quarter">2</ix:nonNumeric>', "") + "</body></html>").encode()
+        wrong_category = ("<html><body>" + metadata(category="Both reports") + "</body></html>").encode()
+        self.assertIsNone(identify_filing(conflicting))
+        self.assertIsNone(identify_filing(missing))
+        self.assertIsNone(identify_filing(wrong_category))
+
+    def test_identified_metadata_mismatch_is_detectable_by_source_query(self):
+        body = ("<html><body>" + metadata(symbol="2344", year="2026", quarter="2",
+                                           category="Individual report") + "</body></html>").encode()
+        filing = identify_filing(body)
+        expected_query = {"symbol": "2330", "year": 2026, "quarter": 2,
+                          "statement_scope": "consolidated"}
+        self.assertEqual(filing, {"symbol": "2344", "year": 2026, "quarter": 2,
+                                  "statement_scope": "individual"})
+        self.assertNotEqual(filing, expected_query)
 
     def test_applies_sign_and_scale(self):
         body = document([fact("1.25", "cur", extra='sign="-" scale="1"'), fact("2.5", "prior", extra='scale="-1"')])

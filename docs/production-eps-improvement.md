@@ -12,13 +12,15 @@
 
 ## 官方來源與保存
 
-沿用MOPS公開年度／季度iXBRL財報ZIP端點：
+使用已驗證的MOPS單公司iXBRL查詢端點：
 
-`https://mopsov.twse.com.tw/server-java/FileDownLoad?step=9&functionName=show_file2&fileName=tifrs-YYYYQq.zip&filePath=%2Fifrs%2FYYYY%2F`
+`https://mopsov.twse.com.tw/server-java/t164sb01?step=1&CO_ID=代碼&SYEAR=西元年&SSEASON=季別&REPORT_ID=C`
 
-依C5合格池實際需要的季別分組，每個季別一次正常請求；不逐股請求、不並行抓取、不改入口重試。每個ZIP限制200MiB，連線讀取timeout20秒、下載wall-clock120秒，逾限或拒絕頁直接報來源錯誤。個別HTML限制16MiB。ZIP本身不寫入正式資料分支，僅保存所需財報HTML的壓縮JSON、URL、觀測時間與原始SHA256至 `data/eps-filings/`。
+僅對完整C5合格池發出必要的單公司／季別正常請求，每份一次；不並行抓取、不改入口重試，請求間隔至少0.3秒。每份限制16MiB，連線讀取timeout20秒、下載wall-clock30秒，逾限或拒絕頁直接報來源錯誤。整份季度ZIP在Windows與GitHub實測均超過120秒，不作每日來源。
 
-僅接受 exact `BasicEarningsLossPerShare` 及指定年／季／公司的cr或ir檔，排除ContinuingOperations與Diluted等近似名稱。檢查非維度context、完整累計起訖、真正宣告的TWD/share單位、sign／scale、nil、有限數值與重複衝突。兩個期間由同份財報產生，因此報表scope一致。當期值還須與當日官方API財報快照EPS完全相符。
+文件內嵌 `CompanyID`、`Year`、`Quarter`、`ReportCategory` 須完整唯一並與查詢相符，從metadata證明合併／個別口徑。UTF-8優先；只有前1024 bytes明示Big5／CP950才允許該編碼，嚴格解碼。保存原始bytes的base64壓縮JSON、URL、觀測時間與SHA256至 `data/eps-filings/`，按季別／公司／scope／內容雜湊去重。
+
+僅接受 exact `BasicEarningsLossPerShare`，排除ContinuingOperations與Diluted等近似名稱。檢查非維度context、完整累計起訖、真正宣告的TWD/share單位、sign／scale、nil、有限數值與重複衝突。兩個期間由同份財報產生，因此報表scope一致。當期值還須與當日官方API財報快照EPS完全相符。
 
 同日EPS補充快照另存 `data/financials/{觀測日}-{目標日}-eps.json.gz`，保存輸入雜湊與schema；原C5快照保留。同一執行可從此快照續跑而不重新下載。歷史日期缺少已觀測EPS快照時拒絕把今天資料冒充當時資訊；隔離測試可依原授權使用執行日財報，揭露真實觀測日。
 
