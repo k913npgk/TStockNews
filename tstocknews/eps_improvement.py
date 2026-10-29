@@ -23,17 +23,21 @@ def download_filing(url):
     try:
         started=time.monotonic();blocks=[];size=0
         with urlopen(Request(url,headers={'User-Agent':'TStockNews/0.1'}),
-                     timeout=20,context=tls_context()) as response:
+                     timeout=45,context=tls_context()) as response:
             while True:
-                if time.monotonic()-started>30:raise SourceError('EPS document exceeded wall-clock limit')
+                if time.monotonic()-started>60:raise SourceError('EPS document exceeded wall-clock limit')
                 block=response.read(64*1024)
                 if not block:break
                 size+=len(block)
                 if size>MAX_FILING_BYTES:raise SourceError('EPS document exceeded size limit')
                 blocks.append(block)
             raw=b''.join(blocks)
+    except SourceError:
+        raise
     except Exception as exc:
-        raise SourceError('MOPS EPS document request failed') from exc
+        code=getattr(exc,'code',None)
+        detail=f'HTTP {code}' if code is not None else type(exc).__name__
+        raise SourceError(f'MOPS EPS document request failed ({detail})') from exc
     if not raw or len(raw)>MAX_FILING_BYTES:raise SourceError('Empty or oversized EPS document')
     time.sleep(.3)
     return raw
@@ -75,7 +79,10 @@ def prepare(root,day,sessions,prices,institutions,financial):
             symbol=company['symbol']
             url='https://mopsov.twse.com.tw/server-java/t164sb01?'+urlencode({
                 'step':1,'CO_ID':symbol,'SYEAR':year,'SSEASON':quarter,'REPORT_ID':'C'})
-            raw=download_filing(url);body_hash=hashlib.sha256(raw).hexdigest()
+            try:raw=download_filing(url)
+            except SourceError as exc:
+                raise SourceError(f'EPS source for {symbol} {period}: {exc}') from exc
+            body_hash=hashlib.sha256(raw).hexdigest()
             identity=identify_filing(raw)
             if not identity or (identity['symbol'],identity['year'],identity['quarter'])!=(symbol,year,quarter):
                 raise SourceError('Official EPS document identity/period is missing or differs from request')

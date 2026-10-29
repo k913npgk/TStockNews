@@ -16,7 +16,7 @@
 
 `https://mopsov.twse.com.tw/server-java/t164sb01?step=1&CO_ID=代碼&SYEAR=西元年&SSEASON=季別&REPORT_ID=C`
 
-僅對完整C5合格池發出必要的單公司／季別正常請求，每份一次；不並行抓取、不改入口重試，請求間隔至少0.3秒。每份限制16MiB，連線讀取timeout20秒、下載wall-clock30秒，逾限或拒絕頁直接報來源錯誤。整份季度ZIP在Windows與GitHub實測均超過120秒，不作每日來源。
+僅對完整C5合格池發出必要的單公司／季別正常請求，每份一次；不並行抓取、不改入口重試，請求間隔至少0.3秒。每份限制16MiB，連線讀取timeout45秒、下載wall-clock60秒，逾限或拒絕頁直接報來源錯誤。整份季度ZIP在Windows與GitHub實測均超過120秒，不作每日來源。
 
 文件內嵌 `CompanyID`、`Year`、`Quarter`、`ReportCategory` 須完整唯一並與查詢相符，從metadata證明合併／個別口徑。UTF-8優先；只有前1024 bytes明示Big5／CP950才允許該編碼，嚴格解碼。保存原始bytes的base64壓縮JSON、URL、觀測時間與SHA256至 `data/eps-filings/`，按季別／公司／scope／內容雜湊去重。
 
