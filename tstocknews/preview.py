@@ -10,6 +10,7 @@ from .engine import MIN_HISTORY_SESSIONS
 from .official import Client, SourceError, extra_closures, holiday_days, quote_rows, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
+from .eps_improvement import prepare as prepare_eps
 
 
 def target_session(root, requested):
@@ -146,6 +147,7 @@ def preview(source, runs, run_id, requested):
     result = None
     if not warnings:
         write(data / "financials" / (observed + ".json.gz"), financial)
+        financial = prepare_eps(data, target, sessions, prices, institutions, financial)
         result = recommendations(target, sessions, prices, institutions, financial, test_run_id=run_id)
         write(data / "recommendations" / (target + ".json"), result)
         write(root / "screen.json", result)

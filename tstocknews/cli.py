@@ -13,6 +13,7 @@ from .line import prepare, send
 from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
+from .eps_improvement import prepare as prepare_eps
 
 
 def load_history(root):
@@ -71,6 +72,7 @@ def daily(root, report_root, day, *, late_financial_date=None):
                     raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
                 financial = universe_and_financials(Client(root), financial_day)
                 write(upgraded_path, financial)
+        financial = prepare_eps(root, day, sessions, prices, institutions, financial)
         result = recommendations(day, sessions, prices, institutions, financial,
                                  late_financial_date=late_financial_date)
         if late_financial_date:

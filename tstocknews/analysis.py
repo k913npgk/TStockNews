@@ -4,6 +4,7 @@ from .catchup import validate as validate_catchup
 from .engine import MIN_HISTORY_SESSIONS, _float, screen
 from .official import SourceError
 from .storage import digest
+from .eps_improvement import apply as apply_eps
 
 
 def supports_revenue_acceleration(financial):
@@ -36,7 +37,8 @@ def recommendations(day, sessions, prices, institutions, financial, *, test_run_
     financial_cutoff = max(day, observed) if test_run_id or late_financial_date else day
     result = screen(day, used_sessions, financial["universe"], used_prices,
                     financial["fundamentals"], used_institutions,
-                    fundamental_as_of=financial_cutoff)
+                    fundamental_as_of=financial_cutoff, candidate_limit=None)
+    result = apply_eps(result, financial, financial_cutoff)
     result["strategy_version"] = STRATEGY_VERSION
     result["data_hash"] = digest({"prices": used_prices, "institutions": used_institutions,
                                   "financial": financial})

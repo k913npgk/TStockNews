@@ -105,9 +105,9 @@ def screen(
     prices: list[dict[str, Any]],
     fundamentals: list[dict[str, Any]],
     institutional: list[dict[str, Any]],
-    *, fundamental_as_of: str | None = None,
+    *, fundamental_as_of: str | None = None, candidate_limit: int | None = MAX_CANDIDATES,
 ) -> dict[str, Any]:
-    """Apply all screening gates and return at most twenty ranked candidates.
+    """Apply C5 gates; default Top20 or the complete pool for the v7 EPS stage.
 
     `sessions` is the authoritative ordered exchange-session calendar. Price gaps
     are never forward-filled. Fundamental records are point-in-time filtered by
@@ -291,7 +291,7 @@ def screen(
     ))
     diagnostics["eligible_count"] = len(candidates)
     diagnostics["exclusion_counts"] = dict(sorted(diagnostics["exclusion_counts"].items()))
-    return {"as_of": as_of, "eligible_count": len(candidates), "candidates": candidates[:MAX_CANDIDATES], "diagnostics": diagnostics}
+    return {"as_of": as_of, "eligible_count": len(candidates), "candidates": candidates[:candidate_limit], "diagnostics": diagnostics}
 
 
 def track(
