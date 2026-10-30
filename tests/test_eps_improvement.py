@@ -34,6 +34,11 @@ def archive(symbols,prior='1'):
 
 
 class EPSIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        clock = patch.object(eps, 'today', return_value=date(2026,10,29))
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_download_rejects_non_zip_oversize_and_transport_failure(self):
         for raw in (b'',b'0'*10):
             with patch.object(eps,'urlopen',return_value=io.BytesIO(raw)),patch.object(eps,'MAX_FILING_BYTES',8):

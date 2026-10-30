@@ -4,6 +4,7 @@ from calendar import monthrange
 from copy import deepcopy
 
 from tstocknews.eps_improvement import SCHEMA
+from tstocknews.monthly_revenue import months_ending
 
 
 def ready(financial, target=None):
@@ -20,6 +21,12 @@ def ready(financial, target=None):
     result["eps_comparison_schema_version"] = SCHEMA
     result["eps_target_date"] = target
     for index, row in enumerate(result.get("fundamentals", [])):
+        if 'revenue_months' not in row:
+            # Existing synthetic positive-flow fixtures predate monthly evidence.
+            end = months_ending(observed[:7])[1]
+            row.setdefault('revenue_end_month', end)
+            row['revenue_months'] = [{'month': m, 'current': 100 * (1 + row.get('revenue_yoy_3m', .2)),
+                                      'prior_year': 100} for m in months_ending(row['revenue_end_month'])]
         eps = float(row["eps"])
         fiscal_period = row["fiscal_period"]
         year_text, quarter_text = fiscal_period.split("-Q")

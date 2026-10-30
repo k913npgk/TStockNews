@@ -169,6 +169,24 @@ class ProductionC5Tests(unittest.TestCase):
         self.assertAlmostEqual(normal["signals"][0]["revenue_growth_acceleration"], .1)
         self.assertTrue(test["signals"][0]["test_only"])
 
+    def test_v8_eps_and_monthly_filters_both_precede_top20(self):
+        companies = [{"market": "twse", "symbol": str(1000+i)} for i in range(32)]
+        funds = [{**self.fund, **c} for c in companies]
+        financial = ready({"observed_date": self.day, "universe": companies, "fundamentals": funds},
+                          target=self.day)
+        for f in financial['fundamentals'][:12]:
+            f['revenue_months'][0]['current'] = 99
+            f['revenue_yoy_3m'] = 339 / 300 - 1
+        prices = [{**p, **c} for c in companies for p in self.prices]
+        inst = [{**p, **c, 'net_buy_shares': 3000 if i < 12 else 1000}
+                for i,c in enumerate(companies) for p in self.inst]
+        got = recommendations(self.day,self.sessions,prices,inst,financial)
+        isolated = recommendations(self.day,self.sessions,prices,inst,financial,test_run_id='v8-top20')
+        self.assertEqual(got['eligible_count'],20)
+        self.assertEqual([r['symbol'] for r in got['candidates']], [str(1012+i) for i in range(20)])
+        self.assertEqual(got['candidates'],isolated['candidates'])
+        self.assertEqual(got['diagnostics']['exclusion_counts']['MONTHLY_REVENUE_NOT_ALL_GROWING'],12)
+
     def test_today_old_snapshot_upgrades_separately_and_old_recommendation_remains_immutable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, reports = Path(tmp) / "data", Path(tmp) / "reports"

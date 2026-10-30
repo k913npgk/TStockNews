@@ -115,9 +115,9 @@ def prepare(root,day,sessions,prices,institutions,financial):
     return enriched
 
 
-def apply(result,financial,cutoff):
+def apply(result,financial,cutoff,*,candidate_limit=MAX_CANDIDATES):
     if result['candidates'] and financial.get('eps_comparison_schema_version')!=SCHEMA:
-        raise SourceError('EPS comparison snapshot is required for v7 recommendations')
+        raise SourceError('EPS comparison snapshot is required for recommendations')
     funds={(r['market'],r['symbol']):r for r in financial['fundamentals']}
     selected=[];counts=result['diagnostics']['exclusion_counts']
     for row in result['candidates']:
@@ -144,6 +144,6 @@ def apply(result,financial,cutoff):
             selected.append({**row,'eps_prior_ytd':prior,'eps_ytd_yoy_delta':row['eps']-prior,
                              'eps_comparison':fact,'eps_comparison_observed_date':observed})
     result['eligible_count']=result['diagnostics']['eligible_count']=len(selected)
-    result['candidates']=selected[:MAX_CANDIDATES]
+    result['candidates']=selected if candidate_limit is None else selected[:candidate_limit]
     result['diagnostics']['eps_rule']='same-scope YTD EPS > prior-year same-period YTD EPS'
     return result
