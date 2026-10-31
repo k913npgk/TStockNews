@@ -1,0 +1,103 @@
+name: ABC forward shadow validation
+run-name: abc-forward ${{ inputs.date || github.event.workflow_run.created_at || 'today' }}
+
+on:
+  workflow_run:
+    workflows: ['Daily Taiwan stock screener']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Taiwan YYYY-MM-DD; blank means today. Same-day capture only.'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: abc-forward-state
+  cancel-in-progress: false
+
+jobs:
+  shadow:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      TEST_ID: abc-forward-v1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore production inputs read-only and isolated forward state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p preview-source test-runs
+          if git show-ref --verify --quiet refs/remotes/origin/screener-data; then
+            git archive origin/screener-data data | tar -x -C preview-source
+          fi
+          if git show-ref --verify --quiet refs/remotes/origin/screener-tests; then
+            if git cat-file -e "origin/screener-tests:test-runs/$TEST_ID" 2>/dev/null; then
+              git archive origin/screener-tests "test-runs/$TEST_ID" | tar -x
+            fi
+          fi
+      - name: Determine intended Taiwan date
+        id: date
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone, timedelta, date
+          import json, os
+          taipei = timezone(timedelta(hours=8))
+          with open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8') as f:
+              event = json.load(f)
+          if os.environ['GITHUB_EVENT_NAME'] == 'workflow_run':
+              stamp = datetime.fromisoformat(event['workflow_run']['created_at'].replace('Z', '+00:00'))
+              value = stamp.astimezone(taipei).date().isoformat()
+          else:
+              value = os.environ.get('INPUT_DATE') or datetime.now(taipei).date().isoformat()
+          date.fromisoformat(value)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+              f.write('value=' + value + '\n')
+          PY
+      - name: Register fixed A B C family
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B -m tstocknews.abc_forward register --run-dir "test-runs/$TEST_ID"
+          echo 'initialized=true' >> "$GITHUB_OUTPUT"
+      - name: Capture same-day shadow selections
+        env:
+          TARGET_DATE: ${{ steps.date.outputs.value }}
+        run: >-
+          python -B -m tstocknews.abc_forward capture
+          --run-dir "test-runs/$TEST_ID"
+          --source-dir preview-source/data
+          --date "$TARGET_DATE"
+      - name: Score observed forward history
+        run: python -B -m tstocknews.abc_forward score --run-dir "test-runs/$TEST_ID"
+      - name: Persist isolated forward evidence
+        if: always() && steps.register.outputs.initialized == 'true'
+        run: bash scripts/persist-tests.sh
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          echo 'A/B/C evidence is stored only in screener-tests under test-runs/abc-forward-v1.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Capture requires a current-date snapshot after 21:07 Asia/Taipei; historical catch-up is rejected.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Missing prices or unreviewed corporate-action coverage can block NAV and efficacy conclusions.' >> "$GITHUB_STEP_SUMMARY"

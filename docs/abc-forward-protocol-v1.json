@@ -1,0 +1,52 @@
+{
+  "action_coverage_required": "VERIFIED_BOTH_MARKETS_PER_DATE",
+  "auto_promote": false,
+  "bootstrap_reps": 10000,
+  "capital_sleeves": 60,
+  "capture_policy": "SAME_DAY_2107_TO_MIDNIGHT_TAIPEI_NO_BACKFILL",
+  "cash_entitlement_policy": "RECEIVABLE_UNTIL_VERIFIED_PAYMENT_DATE",
+  "cash_interest": 0,
+  "code_manifest": {
+    "tstocknews/__init__.py": "59ca4f9a8c5c9a5618df0f71d1a6b60692d52678e1c128c6a7382a37d8cd3f4d",
+    "tstocknews/abc_forward.py": "cd4502dfbca79b19a0de3d84785709ff915ab28ad0f9cc5fb11d40ab3694f7d5",
+    "tstocknews/abc_scoring.py": "34e3082734af2aca4716153afe9986ec49126cb0ab9ced48b937690bec7ad227",
+    "tstocknews/abc_selection.py": "13c5adc630becc1173b465dba7db133c1ee2493a12315d0d4372e050b7d2553d",
+    "tstocknews/analysis.py": "56554c36479f1fd3d75109390bd241a78db8337f1ffb330a65343e35e0dedc62",
+    "tstocknews/engine.py": "0c209440d590c83a1c2da03b8369c9e7211d237e111640677e5f6dd86c99b0fe",
+    "tstocknews/eps_facts.py": "fd154c1f2b8eb8e7e184b15e1bd3b33d5c3a5aacfc253e305b0771785b764cd5",
+    "tstocknews/eps_improvement.py": "7b6ee7a3ce54b6ac411a82cf7371e4d58aba90a4e13c531a6f15d02113ad7ce0",
+    "tstocknews/monthly_revenue.py": "8793314dc69639be054e84380a69b92ee2c70ff9f54d7834989922c2945f7dec",
+    "tstocknews/network.py": "f0e5febfe205ea39f9a54a6c8d96b6701864420a4e41208fbd883ce9991e793b",
+    "tstocknews/official.py": "0a111a5e00ef9651b5ddccfa14aa65441ccc6a028dffc7b1c2b8ebfec88d5fd5",
+    "tstocknews/storage.py": "d893e2bac399a5be9c4ae94381029810ec91bcd738a3eda52179b1bbaf9dcc4f"
+  },
+  "confidence_family_alpha": 0.05,
+  "costs_bps": [
+    60,
+    100
+  ],
+  "historical_proxy_evidence_used_for_selection": true,
+  "horizon": 60,
+  "independence_limit": "Local hash seals are not third-party trusted timestamps; formal result requires review",
+  "max_entry_wait_sessions": 5,
+  "minimum_decision_dates": 360,
+  "minimum_increment": 0.005,
+  "minimum_source_history": 120,
+  "multiplicity": "BONFERRONI_TWO_PRIMARY_CLAIMS_COST60_ONLY",
+  "primary_claims": [
+    "C_minus_A",
+    "C_minus_B"
+  ],
+  "primary_cost_bps": 60,
+  "primary_window": "FIRST_360_DECISION_DATES_ALL_MATURE_NO_GAPPED_SUBSET",
+  "production_version": "rules-v8-monthly-revenue-growth-top20",
+  "registered_at": "2026-10-31T15:46:54.034581+00:00",
+  "schema": "abc-forward-v1",
+  "seed": 1729,
+  "strategies": {
+    "A": "FORMAL_V8_SHARED_BUILDER",
+    "B": "SAME_FINANCIAL_POOL_NO_KD_MACD_GATE_ORIGINAL_INSTITUTIONAL_RANK",
+    "C": "SAME_B_POOL_ORIGINAL_TECHNICAL_SCORE_THEN_ORIGINAL_RANK"
+  },
+  "unresolved_actions_policy": "BLOCK_COMPLETE_NAV"
+}

@@ -37,7 +37,7 @@ def comparison(row, cutoff):
     return result
 
 
-def apply(result, cutoff):
+def apply(result, cutoff, *, candidate_limit=MAX_CANDIDATES):
     selected = []
     known = 0
     counts = result['diagnostics']['exclusion_counts']
@@ -59,6 +59,6 @@ def apply(result, cutoff):
     if result['candidates'] and not known:
         raise SourceError('No EPS-eligible company has a verified three-month revenue comparison')
     result['eligible_count'] = result['diagnostics']['eligible_count'] = len(selected)
-    result['candidates'] = selected[:MAX_CANDIDATES]
+    result['candidates'] = selected if candidate_limit is None else selected[:candidate_limit]
     result['diagnostics']['monthly_revenue_rule'] = 'each latest three legal monthly revenue YoY > 0'
     return result

@@ -50,10 +50,11 @@ def full_c5(day,sessions,prices,institutions,financial):
                   fundamental_as_of=max(day,financial.get('observed_date',day)),candidate_limit=None)
 
 
-def prepare(root,day,sessions,prices,institutions,financial):
+def prepare(root,day,sessions,prices,institutions,financial,*,candidate_pool=None):
     """Observe comparisons only for the complete C5 pool; preserve original snapshots."""
-    pool=full_c5(day,sessions,prices,institutions,financial)['candidates']
-    if financial.get('eps_comparison_schema_version')==SCHEMA and financial.get('eps_target_date')==day:
+    pool=(full_c5(day,sessions,prices,institutions,financial)['candidates']
+          if candidate_pool is None else candidate_pool)
+    if candidate_pool is None and financial.get('eps_comparison_schema_version')==SCHEMA and financial.get('eps_target_date')==day:
         return financial
     key=digest({'financial':financial,'pool':[(r['market'],r['symbol'],r['fiscal_period']) for r in pool]})
     observed=financial.get('observed_date',day)
@@ -71,12 +72,21 @@ def prepare(root,day,sessions,prices,institutions,financial):
         if not re.fullmatch(r'\d{4}-Q[1-4]',r.get('fiscal_period','')):
             raise SourceError('Invalid EPS fiscal period')
         groups.setdefault(r['fiscal_period'],[]).append(r)
-    audit=[]
+    audit=deepcopy(financial.get('eps_source_audit',[])) if candidate_pool is not None else []
     from .eps_facts import extract_comparison,identify_filing
     for period,companies in sorted(groups.items()):
         year,quarter=int(period[:4]),int(period[-1])
         for company in sorted(companies,key=lambda r:(r['market'],r['symbol'])):
             symbol=company['symbol']
+            if candidate_pool is not None and financial.get('eps_comparison_schema_version')==SCHEMA:
+                # Reuse verified same-day comparisons, including valid negative growth.
+                # Broader research pools fetch only the missing issuer comparisons.
+                probe={'candidates':[deepcopy(company)],'diagnostics':{'exclusion_counts':{},
+                    'symbols':{company['market']+':'+symbol:{'reasons':[]}}}}
+                apply(probe,financial,day,candidate_limit=None)
+                reasons=probe['diagnostics']['symbols'][company['market']+':'+symbol]['reasons']
+                if not reasons or reasons==['EPS_NOT_IMPROVED_YOY']:
+                    continue
             url='https://mopsov.twse.com.tw/server-java/t164sb01?'+urlencode({
                 'step':1,'CO_ID':symbol,'SYEAR':year,'SSEASON':quarter,'REPORT_ID':'C'})
             try:raw=download_filing(url)
