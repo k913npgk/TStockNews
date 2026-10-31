@@ -1,8 +1,4 @@
 {
-  "date": "2026-10-29",
-  "eligible_count": 14,
-  "report": "reports/2026-10-29.md",
-  "selected": 14,
-  "status": "REPORT_READY",
-  "strategy_version": "rules-v6-revenue-acceleration-top20"
+  "date": "2026-10-31",
+  "status": "NON_TRADING_DAY"
 }
