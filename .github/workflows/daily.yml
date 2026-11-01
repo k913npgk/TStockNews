@@ -18,6 +18,14 @@ on:
         description: 'Send the prepared report to LINE (default is preview only)'
         type: boolean
         default: false
+      runtime_financials:
+        description: 'Isolated tests only: use runtime financials with actual observation date disclosed'
+        type: boolean
+        default: false
+      resume_test_run_id:
+        description: 'Tests only: reuse an existing immutable report and retry key; keep date and financial mode unchanged'
+        type: string
+        default: ''
       late_financial_date:
         description: 'Approved catch-up only: 2026-10-29 financial snapshot for 2026-10-28, before 09:00 Taipei'
         type: string
@@ -189,7 +197,7 @@ jobs:
     timeout-minutes: 5
     env:
       PYTHONDONTWRITEBYTECODE: '1'
-      TEST_ID: ${{ github.run_id }}
+      TEST_ID: ${{ inputs.resume_test_run_id || github.run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -214,12 +222,20 @@ jobs:
         env:
           INPUT_DATE: ${{ inputs.date }}
           GH_TOKEN: ${{ github.token }}
+          RUNTIME_FINANCIALS: ${{ inputs.runtime_financials }}
+          RESUME_TEST_RUN_ID: ${{ inputs.resume_test_run_id }}
         run: |
           if [ -z "$INPUT_DATE" ]; then
             CREATED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')
             INPUT_DATE=$(python -c 'import sys; from datetime import datetime,timezone,timedelta; print(datetime.fromisoformat(sys.argv[1].replace("Z","+00:00")).astimezone(timezone(timedelta(hours=8))).date())' "$CREATED")
           fi
-          python -B -m tstocknews --data-dir preview-source/data test-report --date "$INPUT_DATE" --run-id "$TEST_ID"
+          ARGS=(test-report --date "$INPUT_DATE" --run-id "$TEST_ID")
+          if [ -n "$RESUME_TEST_RUN_ID" ] && [ ! -f "test-runs/$TEST_ID/manifest.json" ]; then
+            echo 'Requested saved test report does not exist.' >&2
+            exit 1
+          fi
+          if [ "$RUNTIME_FINANCIALS" = true ]; then ARGS+=(--runtime-financials); fi
+          python -B -m tstocknews --data-dir preview-source/data "${ARGS[@]}"
           python - <<'PY'
           import json, os
           from pathlib import Path
