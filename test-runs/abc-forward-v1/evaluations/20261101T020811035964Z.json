@@ -1,0 +1,34 @@
+{
+  "decision_checks": {
+    "auto_promote": false,
+    "claims": {
+      "C_minus_A": {
+        "capital_return_improved": false,
+        "capital_window_complete": false,
+        "corrected_lower_bound_positive": false,
+        "differing_selection_dates": 0,
+        "drawdown_not_worse": false,
+        "fixed_window_complete": false,
+        "mean_improved": false,
+        "stress_capital_positive": false,
+        "stress_increment_positive": false
+      },
+      "C_minus_B": {
+        "capital_return_improved": false,
+        "capital_window_complete": false,
+        "corrected_lower_bound_positive": false,
+        "differing_selection_dates": 0,
+        "drawdown_not_worse": false,
+        "fixed_window_complete": false,
+        "mean_improved": false,
+        "stress_capital_positive": false,
+        "stress_increment_positive": false
+      }
+    },
+    "status": "INCONCLUSIVE_OR_NOT_PASSED"
+  },
+  "formal_holdout_pass": false,
+  "reason": "NO_SNAPSHOTS",
+  "snapshot_count": 0,
+  "status": "INCONCLUSIVE"
+}
