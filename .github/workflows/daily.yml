@@ -26,6 +26,10 @@ on:
         description: 'Tests only: reuse an existing immutable report and retry key; keep date and financial mode unchanged'
         type: string
         default: ''
+      runtime_source_run_id:
+        description: 'Tests only: reuse raw runtime financials observed today from this saved test run'
+        type: string
+        default: ''
       late_financial_date:
         description: 'Approved catch-up only: 2026-10-29 financial snapshot for 2026-10-28, before 09:00 Taipei'
         type: string
@@ -224,6 +228,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUNTIME_FINANCIALS: ${{ inputs.runtime_financials }}
           RESUME_TEST_RUN_ID: ${{ inputs.resume_test_run_id }}
+          RUNTIME_SOURCE_RUN_ID: ${{ inputs.runtime_source_run_id }}
         run: |
           if [ -z "$INPUT_DATE" ]; then
             CREATED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')
@@ -235,6 +240,7 @@ jobs:
             exit 1
           fi
           if [ "$RUNTIME_FINANCIALS" = true ]; then ARGS+=(--runtime-financials); fi
+          if [ -n "$RUNTIME_SOURCE_RUN_ID" ]; then ARGS+=(--runtime-source-run-id "$RUNTIME_SOURCE_RUN_ID"); fi
           python -B -m tstocknews --data-dir preview-source/data "${ARGS[@]}"
           python - <<'PY'
           import json, os

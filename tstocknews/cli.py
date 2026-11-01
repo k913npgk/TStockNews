@@ -143,6 +143,8 @@ def main(argv=None):
     test.add_argument("--test-dir", default="test-runs")
     test.add_argument("--runtime-financials", action="store_true",
                       help="Isolated reports only: use runtime financials and disclose the true observation date")
+    test.add_argument('--runtime-source-run-id', default=None,
+                      help='Reuse a saved isolated raw financial snapshot observed today')
     args = parser.parse_args(argv)
     root, reports = Path(args.data_dir), Path(args.report_dir)
     if args.command != "test-report":
@@ -153,7 +155,8 @@ def main(argv=None):
         if args.command == "test-report":
             from .preview import preview
             output = preview(root, Path(args.test_dir), args.run_id, day,
-                             runtime_financials=args.runtime_financials)
+                             runtime_financials=args.runtime_financials,
+                             runtime_source_run_id=args.runtime_source_run_id)
         elif args.command == "bootstrap":
             end = args.end or today().isoformat()
             if end > today().isoformat() or args.days < 1:

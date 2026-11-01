@@ -1,5 +1,6 @@
 """Same recommendations as production, isolated test records with no performance writes."""
 from datetime import date, timedelta
+from copy import deepcopy
 from pathlib import Path
 import re
 import shutil
@@ -11,6 +12,47 @@ from .official import Client, SourceError, extra_closures, holiday_days, quote_r
 from .report import render
 from .storage import digest, read, write
 from .eps_improvement import prepare as prepare_eps
+from .engine import _float
+
+
+def restore_archived_eps(financial, source, target):
+    """Fill omitted issuers from dated official archives; never replace a reported value/period."""
+    result = deepcopy(financial)
+    known = {}
+    for path in sorted((Path(source) / 'financials').glob('*.json.gz')):
+        if path.name[:10] > target:
+            continue
+        saved = read(path)
+        observed = saved.get('observed_date', path.name[:10])
+        if observed != path.name[:10]:
+            raise SourceError('Archived EPS snapshot filename/observation date mismatch')
+        audit = {'path': path.name, 'observed_date': observed, 'hash': digest(saved)}
+        for row in saved.get('fundamentals', []):
+            period = row.get('fiscal_period', '')
+            if (_float(row.get('eps')) is None or not re.fullmatch(r'\d{4}-Q[1-4]', period)
+                    or not row.get('available_date') or row['available_date'] > target):
+                continue
+            key = (row['market'], row['symbol'])
+            rank = (period, observed)
+            previous = known.get(key)
+            if previous and previous[0] == rank and previous[1]['eps'] != row['eps']:
+                raise SourceError('Conflicting archived EPS for the same observation date/period')
+            if previous is None or rank > previous[0]:
+                known[key] = (rank, row, audit)
+    restored = []
+    for row in result['fundamentals']:
+        if row.get('eps') is not None or row.get('fiscal_period'):
+            continue
+        old = known.get((row['market'], row['symbol']))
+        if old is None:
+            continue
+        _, prior, audit = old
+        row.update(eps=prior['eps'], fiscal_period=prior['fiscal_period'],
+                   operating_margin=prior.get('operating_margin'),
+                   eps_observed_date=audit['observed_date'], eps_source_snapshot=audit)
+        restored.append({'market': row['market'], 'symbol': row['symbol'], **audit})
+    result['archived_eps_restored'] = restored
+    return result
 
 
 def target_session(root, requested):
@@ -56,10 +98,13 @@ def enrich_daily_changes(data, target):
     write(path, saved)
 
 
-def preview(source, runs, run_id, requested, *, runtime_financials=False):
+def preview(source, runs, run_id, requested, *, runtime_financials=False, runtime_source_run_id=None):
     source, runs = Path(source), Path(runs)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", run_id):
         raise ValueError("Invalid test run ID")
+    if runtime_source_run_id and (not runtime_financials or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", runtime_source_run_id)):
+        raise ValueError('A valid runtime source run ID requires runtime financials')
     if source.resolve() == runs.resolve() or source.resolve() in runs.resolve().parents or runs.resolve() in source.resolve().parents:
         raise ValueError("Test directory must be separate from production inputs")
     root = runs / run_id
@@ -74,6 +119,8 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False):
             raise ValueError("A test run ID cannot be reused with a different date")
         if existing.get("runtime_financials", False) != runtime_financials:
             raise ValueError("A test run ID cannot change its financial source mode")
+        if existing.get('runtime_source_run_id') != runtime_source_run_id:
+            raise ValueError('A test run ID cannot change its runtime source run')
         report = root / "reports" / (existing["target_date"] + ".md")
         if not report.exists() or digest(report.read_text(encoding="utf-8")) != existing["report_hash"]:
             raise ValueError("Test report missing or changed; refusing to revise a prepared delivery")
@@ -127,7 +174,23 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False):
             financial = value
             break
     if financial is None:
-        financial = universe_and_financials(Client(data), today().isoformat())
+        if runtime_source_run_id:
+            saved_root = runs / runtime_source_run_id
+            if saved_root.is_symlink() or any(p.is_symlink() for p in saved_root.rglob('*')):
+                raise ValueError('Symlinks are not allowed in runtime source runs')
+            prior_manifest = read(saved_root / 'manifest.json')
+            if (not prior_manifest or not prior_manifest.get('runtime_financials')
+                    or not prior_manifest.get('test_only') or not prior_manifest.get('excluded_from_performance')):
+                raise SourceError('Runtime source run is missing or not a runtime financial snapshot')
+            if prior_manifest.get('financial_observed_date') != today().isoformat():
+                raise SourceError('Runtime source snapshot is not observed today')
+            financial = read(saved_root / 'data' / 'financials' / (today().isoformat() + '.json.gz'))
+            if not financial or financial.get('observed_date') != today().isoformat():
+                raise SourceError('Runtime source snapshot is not observed today')
+        else:
+            financial = universe_and_financials(Client(data), today().isoformat())
+    if runtime_financials:
+        financial = restore_archived_eps(financial, source, target)
     observed = financial.get("observed_date", target)
     upcoming = date.fromisoformat(target) + timedelta(days=1)
     for _ in range(370):
@@ -151,11 +214,18 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False):
         write(data / "financials" / (observed + ".json.gz"), financial)
         financial = prepare_eps(data, target, sessions, prices, institutions, financial)
         result = recommendations(target, sessions, prices, institutions, financial, test_run_id=run_id)
+        missing_eps = [r['symbol'] for r in result['diagnostics']['symbols'].values()
+                       if r.get('eps') is None and r['reasons'] == ['EPS_NOT_POSITIVE']]
+        if missing_eps:
+            raise SourceError('Missing EPS for otherwise eligible issuers: ' + ','.join(sorted(missing_eps)))
         write(data / "recommendations" / (target + ".json"), result)
         write(root / "screen.json", result)
     header = ["【測試報告｜不計入績效】", f"執行指定日：{requested}",
               f"行情／法人截至：{target}", f"財報／營收快照取得日：{observed}",
               f"下一交易日：{next_day}",
+              *([f"EPS 缺值補足：{len(financial['archived_eps_restored'])} 檔；封存取得日："
+                 + '、'.join(sorted({r['observed_date'] for r in financial['archived_eps_restored']}))]
+                if financial.get('archived_eps_restored') else []),
               *( ["本次使用較晚取得的財報，", "不是目標日當時資訊的歷史重現。"] if observed > target else []), ""]
     if result is not None:
         body = render(target, result, [], STRATEGY_VERSION, include_performance=False)
@@ -177,6 +247,8 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False):
                 "warnings": warnings, "selected": len(result["candidates"]) if result is not None else None,
                 "financial_observed_date": observed, "late_financial_snapshot": observed > target,
                 "runtime_financials": runtime_financials,
+                "runtime_source_run_id": runtime_source_run_id,
+                "archived_eps_restored": financial.get('archived_eps_restored', []),
                 "next_trading_day": next_day, "warmup_sessions": len(sessions),
                 "financial_coverage": {market: {"universe": sum(r["market"] == market for r in financial["universe"]),
                     "eps": sum(r["market"] == market and r.get("eps") is not None for r in financial["fundamentals"]),
