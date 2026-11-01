@@ -56,5 +56,7 @@ python -B -m tstocknews test-report --date 2026-10-03 --run-id local-20261003
 
 隔離 `test` 模式可明確指定 `runtime_financials=true`（CLI：`test-report --runtime-financials`），略過來源目錄的舊財報，使用實際執行日取得的財報及 EPS。報告保留行情日、財報取得日及較晚資料揭露，僅寫 `screener-tests`，不計入正式績效。此選項不適用正式 `daily`。
 
+執行日財報作業的時限為 15 分鐘，其餘隔離測試仍為 5 分鐘。資料處理預計超過 5 分鐘時，交付 Actions 執行連結與查核方式，由使用者完成後通知，不持續監控；延長作業時限不代表可以自動發送或跳過來源錯誤。
+
 先以 `send_line=false` 產生並核對報告。核准發送後，以相同 `date`、`runtime_financials`，指定原本的 `resume_test_run_id` 並設 `send_line=true`；流程必須找到原 manifest，核對來源模式及報告 hash，再沿用已保存內容與 retry key，不重新取得財報或改寫報告。LINE retry window 到期仍會拒絕發送。
 
