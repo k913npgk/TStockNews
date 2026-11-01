@@ -56,7 +56,7 @@ def enrich_daily_changes(data, target):
     write(path, saved)
 
 
-def preview(source, runs, run_id, requested):
+def preview(source, runs, run_id, requested, *, runtime_financials=False):
     source, runs = Path(source), Path(runs)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", run_id):
         raise ValueError("Invalid test run ID")
@@ -72,6 +72,8 @@ def preview(source, runs, run_id, requested):
     if existing:
         if existing["requested_date"] != requested:
             raise ValueError("A test run ID cannot be reused with a different date")
+        if existing.get("runtime_financials", False) != runtime_financials:
+            raise ValueError("A test run ID cannot change its financial source mode")
         report = root / "reports" / (existing["target_date"] + ".md")
         if not report.exists() or digest(report.read_text(encoding="utf-8")) != existing["report_hash"]:
             raise ValueError("Test report missing or changed; refusing to revise a prepared delivery")
@@ -113,7 +115,7 @@ def preview(source, runs, run_id, requested):
         current += timedelta(days=1)
     # Prefer the archived target-day inputs; runtime financials are allowed for tests.
     financial = None
-    for path in sorted((source / "financials").glob("*.json.gz"), reverse=True):
+    for path in ([] if runtime_financials else sorted((source / "financials").glob("*.json.gz"), reverse=True)):
         if path.name[:10] > target:
             continue
         value = read(path)
@@ -174,6 +176,7 @@ def preview(source, runs, run_id, requested):
                 "status": "TEST_REPORT_READY", "analysis_status": "COMPLETE" if result is not None else "INCOMPLETE",
                 "warnings": warnings, "selected": len(result["candidates"]) if result is not None else None,
                 "financial_observed_date": observed, "late_financial_snapshot": observed > target,
+                "runtime_financials": runtime_financials,
                 "next_trading_day": next_day, "warmup_sessions": len(sessions),
                 "financial_coverage": {market: {"universe": sum(r["market"] == market for r in financial["universe"]),
                     "eps": sum(r["market"] == market and r.get("eps") is not None for r in financial["fundamentals"]),

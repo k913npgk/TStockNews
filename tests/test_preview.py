@@ -147,6 +147,36 @@ class PreviewTests(unittest.TestCase):
             self.assertIn('不是目標日當時資訊的歷史重現', text)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_runtime_override_bypasses_archived_financials_and_pins_resume_mode(self, calendar):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
+            day = self.seed(source)
+            before = files(source)
+            runtime = read(source / 'financials' / (day + '.json.gz'))
+            runtime['observed_date'] = '2026-10-30'
+            runtime['fundamentals'][0]['available_date'] = '2026-10-30'
+            with patch('tstocknews.preview.today', return_value=date(2026, 10, 30)), \
+                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch, \
+                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
+                result = preview(source, runs, 'runtime', day, runtime_financials=True)
+            fetch.assert_called_once()
+            self.assertEqual(fetch.call_args.args[1], '2026-10-30')
+            self.assertEqual(result['financial_observed_date'], '2026-10-30')
+            self.assertTrue(result['runtime_financials'])
+            self.assertTrue(result['late_financial_snapshot'])
+            self.assertEqual(files(source), before)
+            self.assertFalse((runs / 'runtime/data/performance').exists())
+            text = (runs / 'runtime/reports' / (day + '.md')).read_text(encoding='utf-8')
+            self.assertIn('財報／營收快照取得日：2026-10-30', text)
+            self.assertIn('不是目標日當時資訊的歷史重現', text)
+            with patch('tstocknews.preview.universe_and_financials', side_effect=AssertionError('reuse')):
+                self.assertEqual(preview(source, runs, 'runtime', day, runtime_financials=True), result)
+            with self.assertRaisesRegex(ValueError, 'financial source mode'):
+                preview(source, runs, 'runtime', day)
+            with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+                main(['daily', '--runtime-financials'])
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
     def test_old_snapshot_without_c5_uses_isolated_runtime_snapshot(self, calendar):
         with tempfile.TemporaryDirectory() as tmp:
             source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'

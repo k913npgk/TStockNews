@@ -52,3 +52,9 @@ python -B -m tstocknews test-report --date 2026-10-03 --run-id local-20261003
 目前 checkout 與新的 clone 應執行 `git config core.hooksPath .githooks`。hook 拒絕直接 push main、資料分支、非 codex 分支、非 fast-forward、刪除及執行資料／憑證檔，並於程式 push 前執行測試。GitHub 分支保護負責伺服器端檢查。
 
 已完成的本地暖機可用 `python scripts/publish-warmup.py` 做一次性受檢查同步；僅匯入 `data/days` 與暖機狀態，遇既有日資料衝突即停止。這是人工暖機匯入的明確例外，日常資料由 Actions 維護。不要上傳 `data/source_check.json`、群組 ID 或整個本地 data 目錄。
+# 使用執行日財報補報
+
+隔離 `test` 模式可明確指定 `runtime_financials=true`（CLI：`test-report --runtime-financials`），略過來源目錄的舊財報，使用實際執行日取得的財報及 EPS。報告保留行情日、財報取得日及較晚資料揭露，僅寫 `screener-tests`，不計入正式績效。此選項不適用正式 `daily`。
+
+先以 `send_line=false` 產生並核對報告。核准發送後，以相同 `date`、`runtime_financials`，指定原本的 `resume_test_run_id` 並設 `send_line=true`；流程必須找到原 manifest，核對來源模式及報告 hash，再沿用已保存內容與 retry key，不重新取得財報或改寫報告。LINE retry window 到期仍會拒絕發送。
+
