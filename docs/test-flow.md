@@ -58,5 +58,9 @@ python -B -m tstocknews test-report --date 2026-10-03 --run-id local-20261003
 
 執行日財報作業的時限為 15 分鐘，其餘隔離測試仍為 5 分鐘。資料處理預計超過 5 分鐘時，交付 Actions 執行連結與查核方式，由使用者完成後通知，不持續監控；延長作業時限不代表可以自動發送或跳過來源錯誤。
 
+執行日來源在換季時可能省略尚未公布新季度的公司。隔離流程僅在 EPS 及財報期間都缺失時，用目標日以前已封存的官方觀測值補足，保留來源快照 hash、實際觀測日及財報期間，於報告揭露筆數與日期；不覆蓋已報告的零、負值或新期間未知值。若其他門檻都通過但 EPS 仍缺失，流程失敗，不宣稱零檔。
+
+`runtime_source_run_id` 可重用當日已取得的隔離原始財報快照，避免重複請求完整來源；CLI 為 `--runtime-source-run-id`。只允許 `runtime_financials=true`，快照實際取得日必須仍為今日。報告續送時須保持相同來源 run ID。
+
 先以 `send_line=false` 產生並核對報告。核准發送後，以相同 `date`、`runtime_financials`，指定原本的 `resume_test_run_id` 並設 `send_line=true`；流程必須找到原 manifest，核對來源模式及報告 hash，再沿用已保存內容與 retry key，不重新取得財報或改寫報告。LINE retry window 到期仍會拒絕發送。
 

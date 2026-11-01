@@ -11,7 +11,7 @@ from tests.eps_fixture import ready
 from tstocknews.cli import main, daily
 from tstocknews.engine import track
 from tstocknews.analysis import recommendations
-from tstocknews.preview import enrich_daily_changes, preview, target_session
+from tstocknews.preview import enrich_daily_changes, preview, target_session, restore_archived_eps
 from tstocknews.storage import read, write
 
 
@@ -20,6 +20,83 @@ def files(root):
 
 
 class PreviewTests(unittest.TestCase):
+    def test_archived_eps_restore_preserves_known_values_and_true_dates(self):
+        from copy import deepcopy
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            rows = [{'market': 'twse', 'symbol': str(i), 'eps': eps, 'fiscal_period': period,
+                     'available_date': '2026-11-01', 'revenue_yoy_3m': .3}
+                    for i, eps, period in [(1, None, ''), (2, 0, '2026-Q3'), (3, None, '2026-Q3'), (4, -1, '2026-Q3')]]
+            fresh = {'observed_date': '2026-11-01', 'fundamentals': rows}
+            old = {'observed_date': '2026-10-29', 'source_audit': [{'fetched_at': '2026-10-29'}],
+                   'fundamentals': [{**r, 'eps': 2, 'fiscal_period': '2026-Q2', 'available_date': '2026-10-29'} for r in rows]}
+            write(source / 'financials/2026-10-29.json.gz', old)
+            future = deepcopy(old); future['observed_date'] = '2026-10-31'
+            future['fundamentals'][0]['eps'] = 99
+            write(source / 'financials/2026-10-31.json.gz', future)
+            before = files(source); original = deepcopy(fresh)
+            got = restore_archived_eps(fresh, source, '2026-10-30')
+            self.assertEqual(got['fundamentals'][0]['eps'], 2)
+            self.assertEqual(got['fundamentals'][0]['eps_observed_date'], '2026-10-29')
+            self.assertEqual(got['fundamentals'][0]['revenue_yoy_3m'], .3)
+            self.assertEqual(got['fundamentals'][0]['available_date'], '2026-11-01')
+            self.assertEqual([r['eps'] for r in got['fundamentals'][1:]], [0, None, -1])
+            self.assertEqual(len(got['archived_eps_restored']), 1)
+            self.assertEqual(files(source), before)
+            self.assertEqual(fresh, original)
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_unknown_eps_for_otherwise_eligible_issuer_cannot_be_zero_picks(self, calendar):
+        from tstocknews.official import SourceError
+        with tempfile.TemporaryDirectory() as tmp:
+            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
+            day = self.seed(source)
+            fresh = read(source / 'financials' / (day + '.json.gz'))
+            fresh['observed_date'] = '2026-11-01'
+            fresh['fundamentals'][0].update(eps=None, fiscal_period='2026-Q3', available_date='2026-11-01')
+            # Keep another valid issuer so the market-wide source guard passes;
+            # this case tests a partial outage affecting an otherwise eligible issuer.
+            fresh['universe'].append({'market': 'twse', 'symbol': '9999', 'name': 'Other'})
+            fresh['fundamentals'].append({**fresh['fundamentals'][0], 'symbol': '9999', 'eps': 1})
+            with patch('tstocknews.preview.today', return_value=date(2026, 11, 1)), \
+                 patch('tstocknews.preview.universe_and_financials', return_value=fresh), \
+                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: args[-1]):
+                with self.assertRaisesRegex(SourceError, 'Missing EPS for otherwise eligible'):
+                    preview(source, runs, 'unknown-eps', day, runtime_financials=True)
+            self.assertFalse((runs / 'unknown-eps/reports' / (day + '.md')).exists())
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_reuse_raw_runtime_snapshot_repairs_eps_without_recollecting_financials(self, calendar):
+        from copy import deepcopy
+        from tstocknews.official import SourceError
+        with tempfile.TemporaryDirectory() as tmp:
+            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
+            day = self.seed(source)
+            fresh = read(source / 'financials' / (day + '.json.gz'))
+            fresh['observed_date'] = '2026-11-01'
+            fresh.pop('eps_comparison_schema_version')
+            fresh['fundamentals'][0].update(eps=None, fiscal_period='', available_date='2026-11-01')
+            write(runs / 'prior/manifest.json', {'runtime_financials': True, 'test_only': True,
+                  'excluded_from_performance': True, 'financial_observed_date': '2026-11-01'})
+            write(runs / 'prior/data/financials/2026-11-01.json.gz', fresh)
+            before = files(source)
+            with patch('tstocknews.preview.today', return_value=date(2026, 11, 1)), \
+                 patch('tstocknews.preview.universe_and_financials', side_effect=AssertionError('no recollection')), \
+                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
+                got = preview(source, runs, 'repaired', day, runtime_financials=True, runtime_source_run_id='prior')
+            self.assertEqual(got['selected'], 1)
+            self.assertEqual(len(got['archived_eps_restored']), 1)
+            self.assertEqual(files(source), before)
+            text = (runs / 'repaired/reports' / (day + '.md')).read_text(encoding='utf-8')
+            self.assertIn('EPS 缺值補足：1 檔', text)
+            with self.assertRaisesRegex(ValueError, 'runtime source run'):
+                preview(source, runs, 'repaired', day, runtime_financials=True)
+            with patch('tstocknews.preview.today', return_value=date(2026, 11, 2)):
+                with self.assertRaisesRegex(SourceError, 'not observed today'):
+                    preview(source, runs, 'stale', day, runtime_financials=True, runtime_source_run_id='prior')
+            with self.assertRaises(ValueError):
+                preview(source, runs, 'escape', day, runtime_financials=True, runtime_source_run_id='../prior')
+
     def test_legacy_quote_enrichment_uses_official_target_day_and_keeps_source_immutable(self):
         from tstocknews.official import SourceError
         with tempfile.TemporaryDirectory() as tmp:
