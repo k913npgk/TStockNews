@@ -194,7 +194,7 @@ jobs:
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: ${{ inputs.runtime_financials && 15 || 5 }}
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       TEST_ID: ${{ inputs.resume_test_run_id || github.run_id }}
