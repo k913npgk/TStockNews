@@ -1,0 +1,251 @@
+{
+  "archive_observed_at": "2026-08-31T21:14:19.231110+08:00",
+  "archive_sha256": "761e840f3127a40245c59c29d10e9d857335d3699ea6da59e0e823a1d0f25e47",
+  "archive_url": "https://mopsov.twse.com.tw/server-java/FileDownLoad?step=9&functionName=show_file2&fileName=tifrs-2026Q2.zip&filePath=%2Fifrs%2F2026%2F",
+  "batch": "eps-rollover-20261104",
+  "eps_evidence": {
+    "1216": {
+      "eps_prior_ytd": 1.88,
+      "eps_ytd": 2.56,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "cfcdda6c674d08b251d635e58edb28a3ea6516b538a71aa32a9e1dcd0e70b317",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "cfcdda6c674d08b251d635e58edb28a3ea6516b538a71aa32a9e1dcd0e70b317",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-1216-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "2603": {
+      "eps_prior_ytd": 17.7,
+      "eps_ytd": 11.24,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "c3102d9ff4a13ada4365e905369ddb5f2d5a6bb1c756b8a2e3b9147be93bb5ab",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "c3102d9ff4a13ada4365e905369ddb5f2d5a6bb1c756b8a2e3b9147be93bb5ab",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-2603-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "2610": {
+      "eps_prior_ytd": 1.32,
+      "eps_ytd": 1.08,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "c9694710d525da40e7656f95567f672dfbf54536daa5de863cf889b79242e179",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "c9694710d525da40e7656f95567f672dfbf54536daa5de863cf889b79242e179",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-2610-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "2618": {
+      "eps_prior_ytd": 2.34,
+      "eps_ytd": 2.24,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "79fc37535f5893ee0893677fdc12b0fe8e8f7c4e287c7d975e7bffa0b49d93ad",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "79fc37535f5893ee0893677fdc12b0fe8e8f7c4e287c7d975e7bffa0b49d93ad",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-2618-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "2834": {
+      "eps_prior_ytd": 0.62,
+      "eps_ytd": 0.71,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "11d2b803acd9fb0af3f8852a344a6e4ed289821ed78630d98cfc1ceeb2741a1c",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "11d2b803acd9fb0af3f8852a344a6e4ed289821ed78630d98cfc1ceeb2741a1c",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-basi-cr-2834-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "6233": {
+      "eps_prior_ytd": -0.15,
+      "eps_ytd": 0.22,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "2c6240394ebd90ba9934c0c78c618aec175e950d470f735bfaa2c09e59b0cfc3",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "2c6240394ebd90ba9934c0c78c618aec175e950d470f735bfaa2c09e59b0cfc3",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-6233-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "6446": {
+      "eps_prior_ytd": 5.11,
+      "eps_ytd": 11.35,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "45ed25827a89a8da2617501ba51878f8a546589c995d42b9a253cd0b0ee03673",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "45ed25827a89a8da2617501ba51878f8a546589c995d42b9a253cd0b0ee03673",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-6446-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "6609": {
+      "eps_prior_ytd": -0.74,
+      "eps_ytd": 0.12,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "3dfaaebf4a1c9d02a79a8af9e072d9f2195e2a8ba1784696f82c5346aaaf06bf",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "3dfaaebf4a1c9d02a79a8af9e072d9f2195e2a8ba1784696f82c5346aaaf06bf",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-6609-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    },
+    "9933": {
+      "eps_prior_ytd": -1.09,
+      "eps_ytd": 2.71,
+      "facts": {
+        "eps_prior_ytd": {
+          "contextRef": "From20250101To20250630",
+          "source_member_sha256": "b34c923b2fd0fe73baa78aa13b55a8020f1ab8672203f73d5409f2f4f7b962dd",
+          "unitRef": "EarningsPerShare"
+        },
+        "eps_ytd": {
+          "contextRef": "From20260101To20260630",
+          "source_member_sha256": "b34c923b2fd0fe73baa78aa13b55a8020f1ab8672203f73d5409f2f4f7b962dd",
+          "unitRef": "EarningsPerShare"
+        }
+      },
+      "member_name": "tifrs-fr1-m1-ci-cr-9933-2026Q2.html",
+      "period_end": "2026-06-30",
+      "period_start": "2026-01-01",
+      "prior_period_end": "2025-06-30",
+      "prior_period_start": "2025-01-01",
+      "reason": null,
+      "statement_scope": "consolidated",
+      "status": "KNOWN"
+    }
+  },
+  "evidence_hash": "1683f5e064a426d02b12d6bd875740fbdc4198f9e8806aaabf77f7460631eeeb",
+  "reports": {
+    "2026-11-02": {
+      "c5": 4,
+      "eligible": 2,
+      "report_hash": "70289dcf2dc97c4420e266e0a85b9de89e6ab265fae1cef2a7b93f2e0f2c5680",
+      "result_hash": "101b4b3278362a0017cc89873c4be3b57c6f55692d9ae2be306c417033b76a00",
+      "selected": 2,
+      "supersedes_report_hash": "12c71d407066a9120867126584434474e965fbb2849e1d7836d28b19d3612052"
+    },
+    "2026-11-03": {
+      "c5": 2,
+      "eligible": 1,
+      "report_hash": "54953afb5d72ef6568c36c93bb68cf923434338c062e2b8f421fdeac331b7b1d",
+      "result_hash": "497c8ed5ce93bdd8f4bd9bdd05494ee444b72a7d9932484a7fa33c97d82495d3",
+      "selected": 1,
+      "supersedes_report_hash": "c71383d6df6477ed56a12b416c85472e88e2c942182fa2e35ad6f8074d2ff26a"
+    },
+    "2026-11-04": {
+      "c5": 6,
+      "eligible": 3,
+      "report_hash": "a99cd548143abc136b2e55b62b686843255735a4eda6a31dc944bc36e57a0f0b",
+      "result_hash": "6d03e3fde891622412c33d8315d111ab290aa162b530c7eee5d5927585fa9d75",
+      "selected": 3,
+      "supersedes_report_hash": "770f63148ea3fad8d76e8f9bf7ec22430f79a9a06725c7c3b869dfa89e13acdc"
+    }
+  }
+}
