@@ -154,6 +154,9 @@ jobs:
             git -C state-checkout switch --orphan screener-data
           fi
           cp -a data reports state-checkout/
+          if [ ! -e data/error.json ]; then
+            rm -f state-checkout/data/error.json
+          fi
           git -C state-checkout add data reports
           if ! git -C state-checkout diff --cached --quiet; then
             git -C state-checkout -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Save daily screener state'
@@ -172,6 +175,9 @@ jobs:
         run: |
           if [ -d state-checkout/.git ] || [ -f state-checkout/.git ]; then
             cp -a data reports state-checkout/
+            if [ ! -e data/error.json ]; then
+              rm -f state-checkout/data/error.json
+            fi
             git -C state-checkout add data reports
             if ! git -C state-checkout diff --cached --quiet; then
               git -C state-checkout -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Save delivery status'

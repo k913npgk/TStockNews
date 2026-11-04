@@ -6,20 +6,34 @@ from pathlib import Path
 import sys
 
 from . import STRATEGY_VERSION
-from .analysis import recommendations, supports_revenue_acceleration
+from .analysis import recommendations, require_complete_financials, supports_revenue_acceleration
 from .catchup import validate as validate_catchup
 from .engine import track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
-from .official import Client, SourceError, extra_closures, holiday_days, sync, today, universe_and_financials
+from .official import Client, SourceError, dates_between, extra_closures, holiday_days, sync, today, universe_and_financials
 from .report import render
 from .storage import digest, read, write
+from .eps_archive import restore_archived_eps
 from .eps_improvement import prepare as prepare_eps
 
 
-def load_history(root):
+def load_history(root, through=None):
     sessions, prices, institutional = [], [], []
     for path in sorted((root / "days").glob("*.json.gz")):
+        expected = path.name.removesuffix(".json.gz")
+        if through and expected > through:
+            break
         daily = read(path)
+        if daily["date"] != expected or any(
+                row.get("date") != expected for field in ("prices", "institutional") for row in daily[field]):
+            raise SourceError(f"Market snapshot date mismatch for {expected}")
+        if daily.get("source_audit"):
+            for field in ("prices", "institutional"):
+                keys = {(row["market"], row["symbol"]) for row in daily[field]}
+                if {market for market, _ in keys} != {"twse", "tpex"}:
+                    raise SourceError(f"Incomplete market coverage for {expected} {field}")
+                if len(keys) != len(daily[field]):
+                    raise SourceError(f"Duplicate market data for {expected} {field}")
         sessions.append(daily["date"])
         prices.extend(daily["prices"])
         institutional.extend(daily["institutional"])
@@ -45,13 +59,25 @@ def daily(root, report_root, day, *, late_financial_date=None):
     existing = sorted((root / "days").glob("*.json.gz"))
     start = (date.fromisoformat(existing[-1].name[:10]) + timedelta(days=1)).isoformat() if existing else day
     sync(root, min(start, day), day)
-    sessions, prices, institutions = load_history(root)
+    sessions, prices, institutions = load_history(root, through=day)
+    if day not in sessions:
+        raise SourceError(f"Target session {day} missing from market data")
     if len([s for s in sessions if s <= day]) < MIN_HISTORY_SESSIONS:
         status = {"date": day, "status": "WARMUP_REQUIRED", "sessions": len(sessions),
                   "required": MIN_HISTORY_SESSIONS,
                   "command": "python -m tstocknews bootstrap --days 220"}
         write(root / "status.json", status)
         return status
+    calendar = {date.fromisoformat(day).year: holidays}
+    recent = set(sessions[-MIN_HISTORY_SESSIONS:])
+    for session in dates_between(min(recent), day):
+        key = session.isoformat()
+        if session.weekday() >= 5 or key in closures or key in recent:
+            continue
+        if session.year not in calendar:
+            calendar[session.year] = holiday_days(Client(root), session.year)
+        if key not in calendar[session.year]:
+            raise SourceError(f"Missing market snapshot for expected session {key}; resume bootstrap")
     result_path = root / "recommendations" / (day + ".json")
     result = read(result_path)
     if result and (result.get("test_only") or result.get("excluded_from_performance")):
@@ -72,11 +98,15 @@ def daily(root, report_root, day, *, late_financial_date=None):
                     raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
                 financial = universe_and_financials(Client(root), financial_day)
                 write(upgraded_path, financial)
+        if financial.get("observed_date") != financial_day:
+            raise SourceError("Financial snapshot filename/observation date mismatch")
+        financial = restore_archived_eps(financial, root, financial_day)
         financial = prepare_eps(root, day, sessions, prices, institutions, financial)
         result = recommendations(day, sessions, prices, institutions, financial,
                                  late_financial_date=late_financial_date)
         if late_financial_date:
             validate_catchup(day, late_financial_date)
+        require_complete_financials(result)
         write(result_path, result)
     signals = []
     for path in sorted((root / "recommendations").glob("*.json")):
@@ -208,6 +238,8 @@ def main(argv=None):
         # A failed preview must not create/overwrite the production error/status files.
         if args.command != "test-report":
             write(root / "error.json", detail)
+        if args.command == "daily":
+            write(root / "status.json", {"date": day, "status": "DAILY_FAILED", "error": detail})
         if args.command == "bootstrap":
             write(root / "status.json", {**(bootstrap_status or {}),
                                          "status": "BOOTSTRAP_FAILED", "error": detail})

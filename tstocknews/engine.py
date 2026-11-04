@@ -221,11 +221,15 @@ def screen(
                         if revenue is not None and previous_revenue is not None else None)
         if fund is None:
             reasons.append("NO_AVAILABLE_FUNDAMENTAL")
-        elif eps is None or eps <= 0:
+        elif eps is None:
+            reasons.append("EPS_UNKNOWN")
+        elif eps <= 0:
             reasons.append("EPS_NOT_POSITIVE")
-        if fund is not None and (revenue is None or revenue <= 0):
-            reasons.append("REVENUE_GROWTH_NOT_POSITIVE")
         if fund is not None:
+            if revenue is None:
+                reasons.append("REVENUE_GROWTH_UNKNOWN")
+            elif revenue <= 0:
+                reasons.append("REVENUE_GROWTH_NOT_POSITIVE")
             if acceleration is None:
                 reasons.append("REVENUE_ACCELERATION_UNKNOWN")
             elif acceleration <= 0:

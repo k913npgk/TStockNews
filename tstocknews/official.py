@@ -126,14 +126,16 @@ def quote_rows(value, market, day):
     if str(value.get("date")) != day.replace("-", ""):
         raise SourceError(f"{market} quote date mismatch: {day}")
     out = []
+    maps = ("開盤價", "最高價", "最低價", "收盤價") if market == "twse" else ("開盤", "最高", "最低", "收盤")
     for table in tables(value):
         fields = table.get("fields", [])
         code = "證券代號" if market == "twse" else "代號"
         if code not in fields:
             continue
+        if not set(maps).issubset(fields):
+            raise SourceError(f"{market} quote schema missing OHLC fields for {day}")
         for values in table.get("data", []):
             row = dict(zip(fields, values))
-            maps = ("開盤價", "最高價", "最低價", "收盤價") if market == "twse" else ("開盤", "最高", "最低", "收盤")
             volume = number(row.get("成交股數"))
             if volume is None:
                 raise SourceError("Missing volume field")
@@ -381,6 +383,8 @@ def universe_and_financials(client, as_of):
                              **revenue_windows(revenue, key, day),
                              "available_date": observed, "operating_cash_flow": None,
                              "cash_flow_status": "SOURCE_NOT_IMPLEMENTED"})
+    if today().isoformat() != observed:
+        raise SourceError("Financial collection crossed the requested Taiwan observation date")
     return {"universe": universe, "fundamentals": fundamentals, "observed_date": observed,
             "revenue_schema_version": "six-month-windows-v1",
             "source_audit": list(client.audit)}

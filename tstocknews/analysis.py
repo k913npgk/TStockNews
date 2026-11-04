@@ -52,7 +52,23 @@ def recommendations(day, sessions, prices, institutions, financial, *, test_run_
                           **r, **catchup, **({"test_only": True, "excluded_from_performance": True} if test_run_id else {})}
                          for i, r in enumerate(result["candidates"], 1)]
     result["financial_observed_date"] = observed
+    if financial.get("archived_eps_restored"):
+        result["diagnostics"]["archived_eps_restored"] = financial["archived_eps_restored"]
     if test_run_id:
         result.update(test_only=True, excluded_from_performance=True, test_run_id=test_run_id,
                       late_financial_snapshot=observed > day)
     return result
+
+
+def require_complete_financials(result):
+    """Block publication when unresolved financial data could change the result."""
+    unknown = {"NO_AVAILABLE_FUNDAMENTAL", "EPS_UNKNOWN", "REVENUE_GROWTH_UNKNOWN", "REVENUE_ACCELERATION_UNKNOWN",
+               "EPS_COMPARISON_UNKNOWN", "MONTHLY_REVENUE_COMPARISON_UNKNOWN"}
+    unresolved = []
+    for label, row in result["diagnostics"]["symbols"].items():
+        reasons = set(row["reasons"])
+        if reasons and reasons <= unknown:
+            unresolved.append((label, sorted(reasons)))
+    if unresolved:
+        sample = ", ".join(f"{label} ({'/'.join(reasons)})" for label, reasons in unresolved[:20])
+        raise SourceError(f"Unresolved financial data can affect selection for {len(unresolved)} issuers: {sample}")
