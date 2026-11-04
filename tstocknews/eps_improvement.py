@@ -58,7 +58,8 @@ def prepare(root,day,sessions,prices,institutions,financial,*,candidate_pool=Non
         return financial
     key=digest({'financial':financial,'pool':[(r['market'],r['symbol'],r['fiscal_period']) for r in pool]})
     observed=financial.get('observed_date',day)
-    path=root/'financials'/f'{observed}-{day}-eps.json.gz'
+    suffix = '-restored-eps' if financial.get('archived_eps_restored') else '-eps'
+    path = root / 'financials' / f'{observed}-{day}{suffix}.json.gz'
     cached=read(path)
     if cached is not None:
         if cached.get('eps_input_hash')!=key or cached.get('eps_comparison_schema_version')!=SCHEMA:

@@ -61,7 +61,7 @@ class PreviewTests(unittest.TestCase):
             with patch('tstocknews.preview.today', return_value=date(2026, 11, 1)), \
                  patch('tstocknews.preview.universe_and_financials', return_value=fresh), \
                  patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: args[-1]):
-                with self.assertRaisesRegex(SourceError, 'Missing EPS for otherwise eligible'):
+                with self.assertRaisesRegex(SourceError, 'Unresolved financial data.*2330.*EPS_UNKNOWN'):
                     preview(source, runs, 'unknown-eps', day, runtime_financials=True)
             self.assertFalse((runs / 'unknown-eps/reports' / (day + '.md')).exists())
 

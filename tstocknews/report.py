@@ -20,17 +20,25 @@ def daily_change_pct(value):
 
 
 def render(day, result, performance, strategy, include_performance=True):
+    retrospective = result.get("retrospective", False)
     lines = [f"📊 台股每日篩選｜{day}"]
     if result.get("approved_formal_catchup"):
         lines += [f"實際補跑時間：{result['generated_at']}",
                   f"財報／營收取得日：{result['financial_snapshot_date']}",
                   "本次經核准使用較晚取得的財務資料。", ""]
-    lines += [f"今日符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
+    if not retrospective:
+        restored = result.get("diagnostics", {}).get("archived_eps_restored", [])
+        if restored:
+            lines += [f"EPS 沿用已封存財報：{len(restored)} 檔", ""]
+    label = "當日" if retrospective else "今日"
+    lines += [f"{label}符合 {result['eligible_count']} 檔，列出 {len(result['candidates'])} 檔", ""]
     for i, row in enumerate(result["candidates"], 1):
         rank = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"[i - 1] if i <= 20 else str(i)
         lines += [f"{rank} {row.get('name', '')}（{row['symbol']}）",
                   "當日漲跌幅：" + daily_change_pct(row.get("price_change_pct")), ""]
-    if not result["candidates"]:
+    if not result["candidates"] and retrospective:
+        lines += ["當日沒有符合條件的股票。", ""]
+    elif not result["candidates"]:
         lines += ["今天沒有符合條件的股票，", "持續觀察即可。", ""]
     if include_performance:
         lines += [SEPARATOR, "📈 歷次入選表現", ""]
@@ -61,7 +69,7 @@ def render(day, result, performance, strategy, include_performance=True):
             if horizon == 10:
                 lines.append(f"漲幅達 5%：{sum(v >= .05 for v in returns)}／{len(returns)} 筆" if returns else "漲幅達 5%：尚無結果")
             lines.append("")
-    else:
+    elif not retrospective:
         lines += ["測試推薦獨立保存，不計算任何測試績效。", ""]
     lines += [SEPARATOR, "💡 閱讀提醒", "排名不代表上漲機率。"]
     if include_performance:

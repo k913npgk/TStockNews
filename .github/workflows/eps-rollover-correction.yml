@@ -1,0 +1,73 @@
+name: November EPS rollover report correction
+
+on:
+  workflow_dispatch:
+    inputs:
+      eps_evidence:
+        description: Verified extraction from the pinned original MOPS archive
+        required: true
+        type: string
+      send_line:
+        description: Send all prepared correction reports to LINE
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: stock-screener-state
+  cancel-in-progress: false
+
+jobs:
+  correction:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CORRECTION_DATA: data/corrections/eps-rollover-20261104
+      CORRECTION_REPORTS: reports/corrections/eps-rollover-20261104
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore formal state
+        run: |
+          git archive origin/screener-data | tar -x
+          git worktree add --detach state-checkout origin/screener-data
+      - name: Verify and prepare all three corrections
+        env:
+          EPS_EVIDENCE: ${{ inputs.eps_evidence }}
+        run: |
+          printf '%s' "$EPS_EVIDENCE" > "$RUNNER_TEMP/eps-evidence.json"
+          python -B -m tstocknews.correction --evidence "$RUNNER_TEMP/eps-evidence.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          for day in 2026-11-02 2026-11-03 2026-11-04; do
+            python -B -m tstocknews --data-dir "$CORRECTION_DATA" --report-dir "$CORRECTION_REPORTS" prepare-send --date "$day"
+          done
+          bash scripts/persist-eps-correction.sh
+      - name: Send and checkpoint each correction
+        if: inputs.send_line
+        env:
+          LINE_ENABLED: ${{ vars.LINE_ENABLED }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+        run: |
+          if [ "$LINE_ENABLED" != true ]; then
+            echo 'Formal LINE delivery is disabled.' >&2
+            exit 1
+          fi
+          failed=0
+          for day in 2026-11-02 2026-11-03 2026-11-04; do
+            python -B -m tstocknews --data-dir "$CORRECTION_DATA" --report-dir "$CORRECTION_REPORTS" \
+              send --date "$day" --require-sent || failed=1
+            bash scripts/persist-eps-correction.sh
+          done
+          exit "$failed"
