@@ -176,11 +176,15 @@ def rank_rows(rows):
     return sorted(rows, key=lambda row: (-scores[identity(row)], row["symbol"], row["market"]))
 
 
-def decide(ranked, previous):
-    if not ranked:
+def breadth_state(rows, previous):
+    if not rows:
         raise ValueError("No eligible stocks for test breadth")
-    breadth = sum(row["trend"] > 0 for row in ranked) / len(ranked)
-    active = breadth >= (.40 if previous.get("active") else .55)
+    breadth = sum(row["trend"] > 0 for row in rows) / len(rows)
+    return breadth >= (.40 if previous.get("active") else .55), breadth
+
+
+def decide(ranked, previous):
+    active, breadth = breadth_state(ranked, previous)
     if not active:
         return active, breadth, []
     top = ranked[:40]
@@ -196,16 +200,35 @@ def next_session_rises(rows, quotes):
     return dict(up=sum(row["close"] > row["open"] for row in valid), known=len(valid), total=len(rows))
 
 
+def official_reference(source, day):
+    formal = read(source/"recommendations"/f"{day}.json", {})
+    revisions = []
+    for manifest_path in sorted((source/"corrections").glob("*/manifest.json")):
+        manifest = read(manifest_path)
+        entry = manifest.get("reports", {}).get(day)
+        if entry:
+            revision = read(manifest_path.parent/"recommendations"/f"{day}.json")
+            if not revision or digest(revision) != entry.get("result_hash"):
+                raise ValueError("Formal correction does not match its manifest")
+            revisions.append(revision)
+    if len(revisions) > 1:
+        raise ValueError("Multiple corrections for the same official session")
+    return revisions[0] if revisions else formal
+
+
 def render(snapshot, previous):
     if snapshot["continuity"] != "CONTINUOUS":
         previous = {}
     prior = {identity(row):row for row in previous.get("members", [])}
     current = {identity(row):row for row in snapshot["members"]}
     name = lambda row: f"{row.get('name','')}（{row['symbol']}）"
+    formal_label = "正式 v8 更正版" if snapshot.get("formal_corrected") else "正式 v8"
+    eps_label = (f"測試 EPS 同期比較：{snapshot['eps_known']}／{snapshot['pool_size']} 檔"
+                 if snapshot["eps_known"] is not None else "廣度觸發空榜，略過 EPS 排名。")
     lines = [f"🧪 測試中策略｜{snapshot['date']}", "成長＋資金計分｜前20入榜、前40留任",
              f"合格池廣度 {snapshot['breadth']:.1%}｜{'開啟' if snapshot['active'] else '空榜'}",
-             f"同日正式 v8：{len(snapshot['formal'])} 檔｜測試：{len(current)} 檔｜重疊 {len(set(current)&{identity(row) for row in snapshot['formal']})} 檔",
-             f"測試 EPS 同期比較：{snapshot['eps_known']}／{snapshot['pool_size']} 檔", "",
+             f"同日{formal_label}：{len(snapshot['formal'])} 檔｜測試：{len(current)} 檔｜重疊 {len(set(current)&{identity(row) for row in snapshot['formal']})} 檔",
+             eps_label, "",
              "測試榜單｜次交易日開盤模擬"]
     for key,row in current.items():
         lines.append(f"{'留榜' if key in prior else '入榜'} {name(row)} {daily_change_pct(row.get('price_change_pct'))}")
@@ -230,7 +253,7 @@ def render(snapshot, previous):
 def capture(source, root, day):
     if date.fromisoformat(day) != today():
         raise ValueError("Test comparison requires the current Taiwan session")
-    formal = read(source/"recommendations"/f"{day}.json", {})
+    formal = official_reference(source, day)
     if formal.get("strategy_version") != STRATEGY_VERSION or formal.get("as_of", formal.get("date")) != day or formal.get("test_only"):
         raise ValueError("Same-day formal recommendation required")
     dest = root/"snapshots"/f"{day}.json"
@@ -261,14 +284,20 @@ def capture(source, root, day):
         outcomes = {label: next_session_rises(previous[key], quotes)
                     for label, key in (("正式 v8","formal"), ("測試策略","members"))} if continuity=="CONTINUOUS" else {}
         rows = market_features(snapshots, financial["universe"])
-        eps_sources = financial_features(rows, financial, day)
-        active,breadth,members = decide(rank_rows(rows), previous if continuity=="CONTINUOUS" else {})
+        roster_state = previous if continuity=="CONTINUOUS" else {}
+        active, breadth = breadth_state(rows, roster_state)
+        eps_sources, members, eps_known = [], [], None
+        if active:
+            eps_sources = financial_features(rows, financial, day)
+            _, _, members = decide(rank_rows(rows), roster_state)
+            eps_known = sum(row["earnings"] is not None for row in rows)
         if date.fromisoformat(day) != today():
             raise ValueError("Test observation crossed the intended Taipei session date")
         snapshot = dict(date=day, version=VERSION, test_only=True, excluded_from_performance=True,
                         active=active,breadth=breadth,members=members,formal=formal["candidates"],
+                        formal_corrected=bool(formal.get("correction_batch")),
                         formal_hash=digest(formal), previous_hash=digest(previous), pool_size=len(rows),
-                        eps_known=sum(x["earnings"] is not None for x in rows), eps_sources=eps_sources,
+                        eps_known=eps_known, eps_sources=eps_sources,
                         market_sha256={path.name:sha256(path.read_bytes()).hexdigest() for path in used},
                         financial_hash=digest(financial), continuity=continuity, outcomes=outcomes)
         write(dest,snapshot)

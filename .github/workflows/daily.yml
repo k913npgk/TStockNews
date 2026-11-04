@@ -224,6 +224,9 @@ jobs:
         run: |
           mkdir -p preview-source test-runs
           git archive origin/screener-data data/days "data/recommendations/$TARGET_DATE.json" data/financials | tar -x -C preview-source
+          if git cat-file -e origin/screener-data:data/corrections 2>/dev/null; then
+            git archive origin/screener-data data/corrections | tar -x -C preview-source
+          fi
           if git cat-file -e "origin/screener-tests:test-runs/$TEST_ID" 2>/dev/null; then
             git archive origin/screener-tests "test-runs/$TEST_ID" | tar -x
           fi
