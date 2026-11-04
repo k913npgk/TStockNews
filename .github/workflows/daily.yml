@@ -53,6 +53,9 @@ jobs:
     if: (github.event_name != 'workflow_dispatch' || inputs.mode != 'test') && (github.event_name != 'schedule' || vars.SCHEDULER_PROVIDER != 'cloudflare')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      target: ${{ steps.date.outputs.value }}
+      comparison_ready: ${{ steps.analysis.outputs.report_ready == 'true' || steps.delivery.outputs.already_sent == 'true' }}
     env:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
@@ -199,6 +202,56 @@ jobs:
             reports/
             data/status.json
             data/error.json
+          retention-days: 7
+
+  list-comparison:
+    needs: run
+    if: github.ref == 'refs/heads/main' && needs.run.result == 'success' && needs.run.outputs.comparison_ready == 'true' && inputs.mode != 'bootstrap' && inputs.late_financial_date == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_DATE: ${{ needs.run.outputs.target }}
+      TEST_ID: list-membership-v1
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore official observations and test comparison state
+        run: |
+          mkdir -p preview-source test-runs
+          git archive origin/screener-data data/days "data/recommendations/$TARGET_DATE.json" data/financials | tar -x -C preview-source
+          if git cat-file -e origin/screener-data:data/corrections 2>/dev/null; then
+            git archive origin/screener-data data/corrections | tar -x -C preview-source
+          fi
+          if git cat-file -e "origin/screener-tests:test-runs/$TEST_ID" 2>/dev/null; then
+            git archive origin/screener-tests "test-runs/$TEST_ID" | tar -x
+          fi
+      - name: Prepare test comparison
+        id: comparison
+        run: python -B -m tstocknews.list_shadow capture --date "$TARGET_DATE"
+      - name: Save isolated report and retry key
+        run: bash scripts/persist-tests.sh
+      - name: LINE test strategy comparison
+        if: (inputs.send_line == true && (inputs.scheduler != 'cloudflare' || vars.LINE_ENABLED == 'true')) || (github.event_name == 'schedule' && vars.LINE_ENABLED == 'true')
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+        run: python -B -m tstocknews.list_shadow send --date "$TARGET_DATE"
+      - name: Save isolated delivery result
+        if: always() && steps.comparison.outcome == 'success'
+        run: bash scripts/persist-tests.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: list-comparison-${{ github.run_id }}
+          path: |
+            test-runs/list-membership-v1/reports/${{ env.TARGET_DATE }}.md
+            test-runs/list-membership-v1/data/delivery/${{ env.TARGET_DATE }}.json
+            test-runs/list-membership-v1/snapshots/${{ env.TARGET_DATE }}.json
           retention-days: 7
 
   test:
