@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-28",
-  "message": "twse quote date mismatch: 2026-10-23",
+  "date": "2026-11-05",
+  "message": "EPS source for 1216 2026-Q2: EPS document exceeded wall-clock limit",
   "type": "SourceError"
 }
