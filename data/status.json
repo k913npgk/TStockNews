@@ -1,9 +1,8 @@
 {
-  "date": "2026-11-05",
-  "error": {
-    "date": "2026-11-05",
-    "message": "EPS source for 1216 2026-Q2: EPS document exceeded wall-clock limit",
-    "type": "SourceError"
-  },
-  "status": "DAILY_FAILED"
+  "date": "2026-11-06",
+  "eligible_count": 0,
+  "report": "reports/2026-11-06.md",
+  "selected": 0,
+  "status": "REPORT_READY",
+  "strategy_version": "rules-v8-monthly-revenue-growth-top20"
 }
