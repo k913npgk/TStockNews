@@ -211,7 +211,7 @@ jobs:
     timeout-minutes: 15
     env:
       TARGET_DATE: ${{ needs.run.outputs.target }}
-      TEST_ID: list-membership-v1
+      TEST_ID: quality-momentum-v1
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
@@ -232,7 +232,7 @@ jobs:
           fi
       - name: Prepare test comparison
         id: comparison
-        run: python -B -m tstocknews.list_shadow capture --date "$TARGET_DATE"
+        run: python -B -m tstocknews.quality_shadow capture --date "$TARGET_DATE"
       - name: Save isolated report and retry key
         run: bash scripts/persist-tests.sh
       - name: LINE test strategy comparison
@@ -240,7 +240,7 @@ jobs:
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
-        run: python -B -m tstocknews.list_shadow send --date "$TARGET_DATE"
+        run: python -B -m tstocknews.quality_shadow send --date "$TARGET_DATE"
       - name: Save isolated delivery result
         if: always() && steps.comparison.outcome == 'success'
         run: bash scripts/persist-tests.sh
@@ -249,9 +249,9 @@ jobs:
         with:
           name: list-comparison-${{ github.run_id }}
           path: |
-            test-runs/list-membership-v1/reports/${{ env.TARGET_DATE }}.md
-            test-runs/list-membership-v1/data/delivery/${{ env.TARGET_DATE }}.json
-            test-runs/list-membership-v1/snapshots/${{ env.TARGET_DATE }}.json
+            test-runs/quality-momentum-v1/reports/${{ env.TARGET_DATE }}.md
+            test-runs/quality-momentum-v1/data/delivery/${{ env.TARGET_DATE }}.json
+            test-runs/quality-momentum-v1/snapshots/${{ env.TARGET_DATE }}.json
           retention-days: 7
 
   test:
@@ -338,3 +338,4 @@ jobs:
           overwrite: true
           path: test-runs/${{ github.run_id }}/
           retention-days: 7
+
