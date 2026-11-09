@@ -1,6 +1,7 @@
 {
   "payload_hash": "9d3e04e3251367423f43b37aa702773e6777d77c30e40f6c4163db3fb15d037f",
   "prepared_at": "2026-11-09T13:16:45.640078+00:00",
+  "recipient_count": 2,
   "retry_key": "30c53f37-56e5-4b67-bdd4-187ab5444941",
-  "status": "PENDING"
+  "status": "SENT"
 }
