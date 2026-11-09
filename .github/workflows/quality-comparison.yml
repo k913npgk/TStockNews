@@ -1,0 +1,83 @@
+name: Quality momentum comparison
+run-name: quality-momentum ${{ inputs.mode }} ${{ inputs.date }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [resend, capture]
+        default: resend
+        description: 'Approved Nov9 correction, or current-day live capture'
+      date:
+        type: string
+        default: '2026-11-09'
+        description: 'Taipei YYYY-MM-DD; resend permits only 2026-11-09'
+      send_line:
+        type: boolean
+        default: false
+        description: 'Send the isolated comparison after persisting its retry key'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stock-screener-state
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_DATE: ${{ inputs.date }}
+      TEST_ID: quality-momentum-v1
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Restore read-only official inputs and isolated comparison state
+        run: |
+          mkdir -p preview-source test-runs
+          git archive origin/screener-data data | tar -x -C preview-source
+          if git cat-file -e "origin/screener-tests:test-runs/$TEST_ID" 2>/dev/null; then
+            git archive origin/screener-tests "test-runs/$TEST_ID" | tar -x
+          fi
+      - name: Prepare comparison
+        id: comparison
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$MODE" = resend ]; then
+            python -B -m tstocknews.quality_shadow prepare-resend --date "$TARGET_DATE"
+          else
+            python -B -m tstocknews.quality_shadow capture --date "$TARGET_DATE"
+          fi
+      - name: Persist report and retry key before sending
+        run: bash scripts/persist-tests.sh
+      - name: Send requested comparison
+        if: inputs.send_line == true
+        env:
+          MODE: ${{ inputs.mode }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+        run: |
+          ARGS=(send --date "$TARGET_DATE")
+          if [ "$MODE" = resend ]; then ARGS+=(--resend); fi
+          python -B -m tstocknews.quality_shadow "${ARGS[@]}"
+      - name: Save delivery result
+        if: always() && steps.comparison.outcome == 'success'
+        run: bash scripts/persist-tests.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-comparison-${{ github.run_id }}
+          path: test-runs/quality-momentum-v1/
+          retention-days: 7
