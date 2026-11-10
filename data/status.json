@@ -1,8 +1,8 @@
 {
-  "date": "2026-11-09",
-  "eligible_count": 1,
-  "report": "reports/2026-11-09.md",
-  "selected": 1,
+  "date": "2026-11-10",
+  "eligible_count": 3,
+  "report": "reports/2026-11-10.md",
+  "selected": 3,
   "status": "REPORT_READY",
   "strategy_version": "rules-v8-monthly-revenue-growth-top20"
 }
