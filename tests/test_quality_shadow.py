@@ -37,6 +37,49 @@ def resend_snapshot():
 
 
 class QualityShadowTests(unittest.TestCase):
+    def test_report_shows_rank_changes_and_keeps_test_direction_and_dropped(self):
+        previous = dict(date=RESEND_DAY, version=shadow.VERSION,
+                        members=[member(s) for s in ('1000', '1001', '1002', '1003', '1004')])
+        snapshot = dict(resend_snapshot(), date=DAY, retrospective=False,
+                        continuity='CONTINUOUS',
+                        members=[member(s) for s in ('1002', '1001', '1000', '1005')],
+                        outcomes={'品質＋動能':dict(up=2,known=4,total=5),
+                                  '正式v8':dict(up=1,known=1,total=1)})
+        text = shadow.render(snapshot,previous)
+        for line in ('1｜公司1002（1002）｜↑ 2名', '2｜公司1001（1001）｜持平',
+                     '3｜公司1000（1000）｜↓ 2名', '4｜公司1005（1005）｜新增',
+                     '落榜 公司1003（1003）、公司1004（1004）',
+                     '品質＋動能：2／4檔上漲，價格完整4／5檔'):
+            self.assertIn(line,text)
+        for removed in ('正式v8', '入榜', '留榜', '漲跌幅', '正式榜單', '本版首次',
+                        '會計期別', '營收模型月份', '完整資料池', '12個月資料不足',
+                        '固定延後', '不代表上漲機率', '+1.00%'):
+            self.assertNotIn(removed,text)
+
+    def test_rank_changes_are_unknown_without_comparable_live_history(self):
+        snapshot = dict(resend_snapshot(), date=DAY, retrospective=False,
+                        continuity='CONTINUOUS', members=[member('1000')])
+        previous = dict(date=RESEND_DAY,version=shadow.VERSION,members=[member('1000')])
+        cases = [(dict(snapshot,continuity='INITIAL'),previous),
+                 (dict(snapshot,continuity='RESET_AFTER_GAP'),previous),
+                 (snapshot,dict(previous,version='other')),
+                 (snapshot,dict(previous,retrospective=True)),
+                 (snapshot,dict(previous,date=DAY)),
+                 (dict(snapshot,retrospective=True),previous)]
+        for current,prior in cases:
+            with self.subTest(current=current,prior=prior):
+                text = shadow.render(current,prior)
+                self.assertIn('1｜公司1000（1000）｜—',text)
+                self.assertIn('落榜 —',text)
+                self.assertNotIn('持平',text)
+
+    def test_rank_identity_includes_market_and_empty_report_is_supported(self):
+        previous = dict(date=RESEND_DAY,version=shadow.VERSION,members=[member('1000')])
+        snapshot = dict(resend_snapshot(),date=DAY,retrospective=False,
+                        continuity='CONTINUOUS',members=[dict(member('1000'),market='tpex')])
+        self.assertIn('1｜公司1000（1000）｜新增',shadow.render(snapshot,previous))
+        self.assertIn('空榜',shadow.render(dict(snapshot,members=[]),previous))
+
     def test_market_features_requires_148_sessions_and_marks_12m_coverage(self):
         start = date(2026, 1, 1)
         company = dict(symbol="2330", market="twse", name="台積電")
@@ -179,7 +222,7 @@ class QualityShadowTests(unittest.TestCase):
             self.assertEqual(snapshot["continuity"], "INITIAL")
             self.assertEqual(snapshot["outcomes"], {})
             report = (root / "reports" / f"{DAY}.md").read_text(encoding="utf-8")
-            self.assertIn("入榜 台積電", report)
+            self.assertIn("1｜台積電（2330）｜—", report)
             self.assertNotIn("留榜", report)
 
     def test_resend_is_namespaced_immutable_and_idempotent(self):
