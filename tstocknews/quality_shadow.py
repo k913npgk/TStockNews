@@ -13,13 +13,13 @@ from zipfile import ZipFile
 
 from . import STRATEGY_VERSION
 from . import quality_factors as factors
+from . import quality_performance
 from .cli import push
 from .engine import _valid_price
 from .line import prepare
 from .list_shadow import identity, index, official_reference
 from .network import tls_context
 from .official import today
-from .report import daily_change_pct
 from .storage import digest, read, write
 
 VERSION = 'test-quality-momentum-top20-v1'
@@ -168,44 +168,61 @@ def next_close_rises(rows, quotes):
     return dict(up=up,known=known,total=len(rows))
 
 
-def render(snapshot, previous):
+def render(snapshot, previous, performance=None):
     retrospective = snapshot.get('retrospective',False)
-    continuous = snapshot.get('continuity') == 'CONTINUOUS' and previous.get('version') == VERSION
+    continuous = (snapshot.get('continuity') == 'CONTINUOUS'
+                  and previous.get('version') == VERSION
+                  and previous.get('date', '') < snapshot['date']
+                  and not previous.get('retrospective') and not retrospective)
     prior = {identity(r):r for r in previous.get('members',[])} if continuous else {}
+    prior_ranks = {key:rank for rank,key in enumerate(prior,1)}
     members = snapshot['members']
     name = lambda r:f"{r.get('name','')}（{r['symbol']}）"
     title = '🧪 測試策略更正版' if retrospective else '🧪 測試中策略'
-    lines = [f"{title}｜{snapshot['date']}",'品質＋動能｜每日排名前20檔',
-             f"同日正式v8：{len(snapshot['formal'])}檔｜測試：{len(members)}檔",'']
+    lines = [f"{title}｜{snapshot['date']}",'品質＋動能｜每日排名前20檔','']
     if retrospective:
         lines += ['本次為事後補發，使用11/9收盤行情與已保存研究規則。','不納入當日前瞻觀察紀錄。','']
-    for row in members:
-        lines.append(f"{'留榜' if identity(row) in prior else '入榜'} {name(row)} {daily_change_pct(row.get('price_change_pct'))}")
+    lines.append('排名｜股票｜較上次排名變動')
+    for rank,row in enumerate(members,1):
+        previous_rank = prior_ranks.get(identity(row))
+        if not continuous:
+            change = '—'
+        elif previous_rank is None:
+            change = '新增'
+        else:
+            delta = previous_rank-rank
+            change = f"↑ {delta}名" if delta > 0 else f"↓ {-delta}名" if delta < 0 else '持平'
+        lines.append(f"{rank}｜{name(row)}｜{change}")
     if not members:
         lines.append('空榜')
     current = {identity(r) for r in members}
-    lines += ['', '落榜 '+('、'.join(name(r) for k,r in prior.items() if k not in current) or '0檔'),
-              '正式榜單 '+('、'.join(name(r) for r in snapshot['formal']) or '0檔')]
+    dropped = '、'.join(name(r) for k,r in prior.items() if k not in current) or '0檔'
+    lines += ['', '落榜 '+(dropped if continuous else '—')]
     if continuous:
         lines += ['', '前一交易日榜單｜今日收盤較前日收盤']
         for label,value in snapshot.get('outcomes',{}).items():
-            lines.append(f"{label}：{value['up']}／{value['known']}檔上漲，價格完整{value['known']}／{value['total']}檔")
-    elif not retrospective:
-        lines += ['', '本版首次或中斷後重新建榜，等待下一交易日比較。']
-    lines += ['',f"會計期別：{'、'.join(snapshot.get('fiscal_periods',[]))}",
-              f"營收模型月份：{'、'.join(snapshot.get('revenue_months',[]))}",
-              f"完整資料池：{snapshot['pool_size']}檔｜有12個月動能資料：{snapshot['uses_12m_count']}檔",
-              '12個月資料不足時沿用6個月動能。','財報及營收依固定延後可用日規則；可能未納入提早公布資料。',
-              '測試名單不代表上漲機率；股價未完整還原股息與公司行動。']
+            if label == '品質＋動能':
+                lines.append(f"{label}：{value['up']}／{value['known']}檔上漲，價格完整{value['known']}／{value['total']}檔")
+    if performance is not None:
+        if retrospective or performance.get('date') != snapshot['date'] or performance.get('version') != VERSION:
+            raise ValueError('Quality performance/report identity mismatch')
+        lines += quality_performance.render(performance)
     return '\n'.join(lines)+'\n'
 
 
-def save_report(root, day, snapshot, previous):
+def save_report(root, day, snapshot, previous, performance=None):
     report = root/'reports'/f'{day}.md'
-    content = render(snapshot,previous)
+    content = render(snapshot,previous,performance)
     report.parent.mkdir(parents=True,exist_ok=True)
     if report.exists() and report.read_text(encoding='utf-8') != content:
         raise ValueError('Saved quality report changed')
+    if performance is not None:
+        path = root/'performance'/f'{day}.json'
+        saved = read(path)
+        if saved is not None and saved != performance:
+            raise ValueError('Saved quality performance changed')
+        if saved is None:
+            write(path,performance)
     if not report.exists():
         report.write_text(content,encoding='utf-8')
     delivery = root/'data/delivery'/f'{day}.json'
@@ -263,7 +280,8 @@ def capture(source, root, day, load_period=None):
         write(dest,snapshot)
     if snapshot.get('version') != VERSION or snapshot.get('retrospective') or snapshot['formal_hash'] != digest(formal) or snapshot['previous_hash'] != digest(previous):
         raise ValueError('Saved live snapshot identity changed')
-    save_report(root,day,snapshot,previous)
+    performance = quality_performance.build(source,root,day,VERSION)
+    save_report(root,day,snapshot,previous,performance)
     return snapshot
 
 
