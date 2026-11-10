@@ -252,6 +252,7 @@ jobs:
             test-runs/quality-momentum-v1/reports/${{ env.TARGET_DATE }}.md
             test-runs/quality-momentum-v1/data/delivery/${{ env.TARGET_DATE }}.json
             test-runs/quality-momentum-v1/snapshots/${{ env.TARGET_DATE }}.json
+            test-runs/quality-momentum-v1/performance/${{ env.TARGET_DATE }}.json
           retention-days: 7
 
   test:

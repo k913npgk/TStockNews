@@ -13,6 +13,7 @@ from zipfile import ZipFile
 
 from . import STRATEGY_VERSION
 from . import quality_factors as factors
+from . import quality_performance
 from .cli import push
 from .engine import _valid_price
 from .line import prepare
@@ -167,7 +168,7 @@ def next_close_rises(rows, quotes):
     return dict(up=up,known=known,total=len(rows))
 
 
-def render(snapshot, previous):
+def render(snapshot, previous, performance=None):
     retrospective = snapshot.get('retrospective',False)
     continuous = (snapshot.get('continuity') == 'CONTINUOUS'
                   and previous.get('version') == VERSION
@@ -202,15 +203,26 @@ def render(snapshot, previous):
         for label,value in snapshot.get('outcomes',{}).items():
             if label == '品質＋動能':
                 lines.append(f"{label}：{value['up']}／{value['known']}檔上漲，價格完整{value['known']}／{value['total']}檔")
+    if performance is not None:
+        if retrospective or performance.get('date') != snapshot['date'] or performance.get('version') != VERSION:
+            raise ValueError('Quality performance/report identity mismatch')
+        lines += quality_performance.render(performance)
     return '\n'.join(lines)+'\n'
 
 
-def save_report(root, day, snapshot, previous):
+def save_report(root, day, snapshot, previous, performance=None):
     report = root/'reports'/f'{day}.md'
-    content = render(snapshot,previous)
+    content = render(snapshot,previous,performance)
     report.parent.mkdir(parents=True,exist_ok=True)
     if report.exists() and report.read_text(encoding='utf-8') != content:
         raise ValueError('Saved quality report changed')
+    if performance is not None:
+        path = root/'performance'/f'{day}.json'
+        saved = read(path)
+        if saved is not None and saved != performance:
+            raise ValueError('Saved quality performance changed')
+        if saved is None:
+            write(path,performance)
     if not report.exists():
         report.write_text(content,encoding='utf-8')
     delivery = root/'data/delivery'/f'{day}.json'
@@ -268,7 +280,8 @@ def capture(source, root, day, load_period=None):
         write(dest,snapshot)
     if snapshot.get('version') != VERSION or snapshot.get('retrospective') or snapshot['formal_hash'] != digest(formal) or snapshot['previous_hash'] != digest(previous):
         raise ValueError('Saved live snapshot identity changed')
-    save_report(root,day,snapshot,previous)
+    performance = quality_performance.build(source,root,day,VERSION)
+    save_report(root,day,snapshot,previous,performance)
     return snapshot
 
 
