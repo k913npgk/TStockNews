@@ -1,8 +1,9 @@
 {
-  "date": "2026-11-11",
-  "eligible_count": 5,
-  "report": "reports/2026-11-11.md",
-  "selected": 5,
-  "status": "REPORT_READY",
-  "strategy_version": "rules-v8-monthly-revenue-growth-top20"
+  "date": "2026-11-12",
+  "error": {
+    "date": "2026-11-12",
+    "message": "Missing market snapshot for expected session 2026-06-19; resume bootstrap",
+    "type": "SourceError"
+  },
+  "status": "DAILY_FAILED"
 }

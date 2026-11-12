@@ -1,0 +1,5 @@
+{
+  "date": "2026-11-12",
+  "message": "Missing market snapshot for expected session 2026-06-19; resume bootstrap",
+  "type": "SourceError"
+}
