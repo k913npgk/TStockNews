@@ -1,9 +1,4 @@
 {
-  "date": "2026-11-13",
-  "error": {
-    "date": "2026-11-13",
-    "message": "Missing market snapshot for expected session 2026-06-19; resume bootstrap",
-    "type": "SourceError"
-  },
-  "status": "DAILY_FAILED"
+  "date": "2026-11-14",
+  "status": "NON_TRADING_DAY"
 }
