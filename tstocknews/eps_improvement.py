@@ -7,6 +7,7 @@ import base64
 import re
 import time
 from urllib.parse import urlencode
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from .engine import screen, MIN_HISTORY_SESSIONS, MAX_CANDIDATES, _float
@@ -16,31 +17,47 @@ from .storage import read,write,digest
 
 SCHEMA='same-filing-ytd-eps-v1'
 MAX_FILING_BYTES=16*1024*1024
+FILING_DEADLINE_SECONDS = 120
+
+
+class _FilingDeadlineExceeded(TimeoutError):
+    pass
 
 
 def download_filing(url):
-    """One ordinary official document request; sequential, no retry or alternate URL."""
-    try:
-        started=time.monotonic();blocks=[];size=0
-        with urlopen(Request(url,headers={'User-Agent':'TStockNews/0.1'}),
-                     timeout=45,context=tls_context()) as response:
-            while True:
-                if time.monotonic()-started>60:raise SourceError('EPS document exceeded wall-clock limit')
-                block=response.read(64*1024)
-                if not block:break
-                size+=len(block)
-                if size>MAX_FILING_BYTES:raise SourceError('EPS document exceeded size limit')
-                blocks.append(block)
-            raw=b''.join(blocks)
-    except SourceError:
-        raise
-    except Exception as exc:
-        code=getattr(exc,'code',None)
-        detail=f'HTTP {code}' if code is not None else type(exc).__name__
-        raise SourceError(f'MOPS EPS document request failed ({detail})') from exc
-    if not raw or len(raw)>MAX_FILING_BYTES:raise SourceError('Empty or oversized EPS document')
-    time.sleep(.3)
-    return raw
+    """Fetch one official filing, with one bounded retry on a transient timeout/reset."""
+    request = Request(url, headers={'User-Agent': 'TStockNews/0.1'})
+    context = tls_context()
+    for attempt in range(2):
+        deadline = time.monotonic() + FILING_DEADLINE_SECONDS
+        body = bytearray()
+        try:
+            with urlopen(request, timeout=45, context=context) as response:
+                while time.monotonic() < deadline:
+                    block = response.read1(64 * 1024)
+                    if time.monotonic() >= deadline:
+                        break
+                    if not block:
+                        if not body:
+                            raise SourceError('Empty EPS document')
+                        time.sleep(.3)
+                        return bytes(body)
+                    body.extend(block)
+                    if len(body) > MAX_FILING_BYTES:
+                        raise SourceError('EPS document exceeded size limit')
+                raise _FilingDeadlineExceeded('EPS document exceeded wall-clock limit')
+        except SourceError:
+            raise
+        except Exception as exc:
+            cause = exc.reason if isinstance(exc, URLError) else exc
+            if attempt == 0 and isinstance(cause, (TimeoutError, ConnectionResetError)):
+                time.sleep(2)
+                continue
+            code = getattr(exc, 'code', None)
+            detail = f'HTTP {code}' if code is not None else type(cause).__name__
+            if isinstance(cause, _FilingDeadlineExceeded):
+                raise SourceError(str(cause)) from exc
+            raise SourceError(f'MOPS EPS document request failed ({detail})') from exc
 
 
 def full_c5(day,sessions,prices,institutions,financial):

@@ -393,23 +393,27 @@ def universe_and_financials(client, as_of):
             "source_audit": list(client.audit)}
 
 
-def sync(root, start, end, progress=None):
-    client = Client(root)
+def sync(root, start, end, progress=None, *, client=None):
+    if client is None:
+        client = Client(root)
     closures = extra_closures(root)  # ISO day -> evidence URL
     calendars = {year: holiday_days(client, year) for year in
                  range(date.fromisoformat(start).year, date.fromisoformat(end).year + 1)}
-    allowed = {(r["market"], r["symbol"]) for r in ordinary_universe(client)}
-    for path in (root / "recommendations").glob("*.json"):
-        allowed.update((r["market"], r["symbol"]) for r in read(path).get("signals", []))
+    missing = []
     for current in dates_between(start, end):
         day = current.isoformat()
         if current.weekday() >= 5 or day in calendars[current.year] or day in closures:
             continue
         path = root / "days" / (day + ".json.gz")
-        if path.exists():
-            continue
-        client.audit = []
-        daily = collect_day(client, day, allowed)
+        if not path.exists():
+            missing.append((day, path))
+    if not missing:
+        return client
+    allowed = {(r["market"], r["symbol"]) for r in ordinary_universe(client)}
+    for path in (root / "recommendations").glob("*.json"):
+        allowed.update((r["market"], r["symbol"]) for r in read(path).get("signals", []))
+    for day, path in missing:
+        daily = collect_day(Client(root), day, allowed)
         write(path, daily)
         if progress:
             progress(day)

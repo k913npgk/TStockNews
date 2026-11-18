@@ -140,6 +140,15 @@ class PipelineTests(unittest.TestCase):
                 sync(root, "2026-07-13", "2026-07-13")
             self.assertFalse((root / "days" / "2026-07-13.json.gz").exists())
 
+    def test_sync_with_complete_market_cache_does_not_reload_universe(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("tstocknews.official.holiday_days", return_value=set()), \
+             patch("tstocknews.official.ordinary_universe") as universe:
+            root = Path(tmp)
+            write(root / "days" / "2026-11-18.json.gz", {"date": "2026-11-18"})
+            sync(root, "2026-11-18", "2026-11-18")
+            universe.assert_not_called()
+
     def test_bootstrap_failure_keeps_checkpoint_and_can_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
