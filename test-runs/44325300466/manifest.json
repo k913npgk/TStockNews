@@ -1,0 +1,127 @@
+{
+  "analysis_status": "COMPLETE",
+  "archived_eps_restored": [
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2880"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2881"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2882"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2883"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2884"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2885"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2886"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2887"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2889"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2890"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2891"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "2892"
+    },
+    {
+      "hash": "1b72bc88915e2692aab6974b1c811867fb59c7e741ecf672be32d99aeb243ff4",
+      "market": "twse",
+      "observed_date": "2026-10-29",
+      "path": "2026-10-29.json.gz",
+      "symbol": "5880"
+    }
+  ],
+  "excluded_from_performance": true,
+  "financial_coverage": {
+    "tpex": {
+      "eps": 898,
+      "revenue": 894,
+      "revenue_acceleration": 894,
+      "universe": 898
+    },
+    "twse": {
+      "eps": 1087,
+      "revenue": 1086,
+      "revenue_acceleration": 1082,
+      "universe": 1088
+    }
+  },
+  "financial_observed_date": "2026-11-18",
+  "input_hash": "ff7d8e7062ecf06f30412853fb301d1c1deb4f428256d9e7e717e68ad994e134",
+  "late_financial_snapshot": true,
+  "next_trading_day": "2026-11-17",
+  "recommendations": "test-runs/44325300466/data/recommendations/2026-11-16.json",
+  "report_hash": "b520fd41e5303717a39d363dff9e3043ae9bab6f8c4ffe49ec3df291b6be8e85",
+  "requested_date": "2026-11-16",
+  "run_id": "44325300466",
+  "runtime_financials": true,
+  "runtime_source_run_id": null,
+  "selected": 4,
+  "status": "TEST_REPORT_READY",
+  "target_date": "2026-11-16",
+  "test_only": true,
+  "warmup_sessions": 120,
+  "warnings": []
+}
