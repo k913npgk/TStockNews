@@ -187,15 +187,18 @@ def inst_rows(value, market, day):
 
 def holiday_days(client, year):
     value = client.json("https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule",
-                        response="json", queryYear=year)
+                        response="json", date=str(year))
     if not value.get("data"):
-        raise SourceError("Official calendar unavailable")
+        raise SourceError(f"Official calendar unavailable for {year}")
     result = set()
     for row in value["data"]:
+        session = date.fromisoformat(str(row[0]).replace("/", "-"))
+        if session.year != year:
+            raise SourceError(f"Official calendar returned {session.year} for requested year {year}")
         # Explicit trading-day markers are not holidays.
         if "交易日" in row[1] or "開始交易" in row[1]:
             continue
-        result.add(date.fromisoformat(str(row[0]).replace("/", "-")).isoformat())
+        result.add(session.isoformat())
     return result
 
 

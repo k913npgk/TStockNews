@@ -4,17 +4,34 @@ from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tstocknews.cli import daily, main, push
 from tstocknews.line import prepare, send
-from tstocknews.official import SourceError, RevenueTable, inst_rows, quote_rows, month_offset, sync
+from tstocknews.official import SourceError, RevenueTable, holiday_days, inst_rows, quote_rows, month_offset, sync
 from tstocknews.storage import read, write
 from tests.test_engine import weekdays, bars
 from tests.eps_fixture import ready
 
 
 class AdapterTests(unittest.TestCase):
+    def test_holiday_calendar_requests_correct_year_and_excludes_trading_markers(self):
+        client = Mock()
+        client.json.return_value = {"data": [
+            ["2026-02-11", "農曆春節前最後交易日", ""],
+            ["2026-02-12", "市場無交易，僅辦理結算交割作業。", ""],
+            ["2026-06-19", "端午節", ""],
+        ]}
+        self.assertEqual(holiday_days(client, 2026), {"2026-02-12", "2026-06-19"})
+        client.json.assert_called_once_with(
+            "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule", response="json", date="2026")
+
+    def test_holiday_calendar_rejects_default_year_even_for_trading_markers(self):
+        client = Mock()
+        client.json.return_value = {"data": [["2027-01-04", "國曆新年開始交易日", ""]]}
+        with self.assertRaisesRegex(SourceError, "returned 2027 for requested year 2026"):
+            holiday_days(client, 2026)
+
     def test_quote_units_dates_and_missing_prices(self):
         value = {"date": "20261002", "tables": [{"fields": ["代號", "名稱", "開盤", "最高", "最低", "收盤", "成交股數"],
                   "data": [["1234", "甲", "10", "12", "9", "11", "2,000,000"], ["5678", "乙", "--", "--", "--", "--", "0"]]}]}
