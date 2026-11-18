@@ -1,0 +1,35 @@
+{
+  "analysis_status": "COMPLETE",
+  "archived_eps_restored": [],
+  "excluded_from_performance": true,
+  "financial_coverage": {
+    "tpex": {
+      "eps": 898,
+      "revenue": 894,
+      "revenue_acceleration": 894,
+      "universe": 898
+    },
+    "twse": {
+      "eps": 1087,
+      "revenue": 1086,
+      "revenue_acceleration": 1082,
+      "universe": 1088
+    }
+  },
+  "financial_observed_date": "2026-11-18",
+  "input_hash": "2393b76482bcea9e5895895bc9742f33654ecb9bcd997fa14f33140278ad5b43",
+  "late_financial_snapshot": true,
+  "next_trading_day": "2026-11-16",
+  "recommendations": "test-runs/44330930424/data/recommendations/2026-11-13.json",
+  "report_hash": "814beac8ae08f70846e7f05c661a05958dd7fe378713a03039abf8b817b382d2",
+  "requested_date": "2026-11-13",
+  "run_id": "44330930424",
+  "runtime_financials": true,
+  "runtime_source_run_id": "44329370834",
+  "selected": 14,
+  "status": "TEST_REPORT_READY",
+  "target_date": "2026-11-13",
+  "test_only": true,
+  "warmup_sessions": 120,
+  "warnings": []
+}
