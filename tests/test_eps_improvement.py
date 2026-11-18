@@ -47,6 +47,16 @@ class EPSIntegrationTests(unittest.TestCase):
             with self.assertRaises(SourceError):eps.download_filing('https://example.test/archive')
             self.assertEqual(get.call_count,1)
 
+    @patch.object(eps.time, 'sleep')
+    def test_download_retries_transient_timeout_once(self, pause):
+        with patch.object(eps, 'urlopen', side_effect=[TimeoutError(), io.BytesIO(b'document')]) as get:
+            self.assertEqual(eps.download_filing('https://example.test/filing'), b'document')
+            self.assertEqual(get.call_count, 2)
+        with patch.object(eps, 'urlopen', side_effect=TimeoutError()) as get:
+            with self.assertRaisesRegex(SourceError, 'TimeoutError'):
+                eps.download_filing('https://example.test/filing')
+            self.assertEqual(get.call_count, 2)
+
     def test_source_batch_cache_resume_and_original_financial_immutable(self):
         f=finance(2);before=deepcopy(f)
         with tempfile.TemporaryDirectory() as tmp:

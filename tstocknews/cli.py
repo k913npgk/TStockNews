@@ -49,7 +49,8 @@ def daily(root, report_root, day, *, late_financial_date=None):
     if date.fromisoformat(day).weekday() >= 5 or day in closures:
         write(root / "status.json", {"date": day, "status": "NON_TRADING_DAY"})
         return {"date": day, "status": "NON_TRADING_DAY"}
-    holidays = holiday_days(Client(root), date.fromisoformat(day).year)
+    client = Client(root)
+    holidays = holiday_days(client, date.fromisoformat(day).year)
     if late_financial_date and (late_financial_date in holidays or late_financial_date in closures
                                 or date.fromisoformat(late_financial_date).weekday() >= 5):
         raise SourceError("Approved catch-up entry day is not an exchange session")
@@ -58,7 +59,7 @@ def daily(root, report_root, day, *, late_financial_date=None):
         return {"date": day, "status": "NON_TRADING_DAY"}
     existing = sorted((root / "days").glob("*.json.gz"))
     start = (date.fromisoformat(existing[-1].name[:10]) + timedelta(days=1)).isoformat() if existing else day
-    sync(root, min(start, day), day)
+    sync(root, min(start, day), day, client=client)
     sessions, prices, institutions = load_history(root, through=day)
     if day not in sessions:
         raise SourceError(f"Target session {day} missing from market data")
@@ -87,7 +88,7 @@ def daily(root, report_root, day, *, late_financial_date=None):
         snapshot_path = root / "financials" / (financial_day + ".json.gz")
         financial = read(snapshot_path)
         if financial is None:
-            financial = universe_and_financials(Client(root), financial_day)
+            financial = universe_and_financials(client, financial_day)
             write(snapshot_path, financial)
         if not supports_revenue_acceleration(financial):
             # Preserve the old snapshot. Newly observed data can only upgrade today's inputs.
@@ -96,7 +97,7 @@ def daily(root, report_root, day, *, late_financial_date=None):
             if financial is None:
                 if financial_day != today().isoformat():
                     raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
-                financial = universe_and_financials(Client(root), financial_day)
+                financial = universe_and_financials(client, financial_day)
                 write(upgraded_path, financial)
         if financial.get("observed_date") != financial_day:
             raise SourceError("Financial snapshot filename/observation date mismatch")
