@@ -1,4 +1,6 @@
-# 每日品質＋動能測試比較
+# 每日品質＋動能測試比較（已停用排程）
+
+> 2026-11-24 已依使用者要求，將 `.github/workflows/daily.yml` 中的每日排程測試策略 `list-comparison` 移除；既有程式碼與 `screener-tests` 歷史封存資料保留供查閱。
 
 正式v8日報完成後，`list-comparison` 產生獨立的品質＋動能測試榜單。正式v8規則不變；舊成長＋資金與前40留任版本保留原資料。新版本`test-quality-momentum-top20-v1`，所有快照、會計快取與LINE收據僅存於`screener-tests:test-runs/quality-momentum-v1`，不合併正式資料或績效。
 
