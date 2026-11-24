@@ -1,11 +1,12 @@
 """One recommendation builder for production and isolated tests."""
-from . import STRATEGY_VERSION
+from . import LEGACY_V8_STRATEGY_VERSION, STRATEGY_VERSION
 from .catchup import validate as validate_catchup
 from .engine import MIN_HISTORY_SESSIONS, _float, screen
+from .eps_improvement import apply as apply_eps
+from .four_indicator import screen_four_indicators
+from .monthly_revenue import apply as apply_monthly_revenue
 from .official import SourceError
 from .storage import digest
-from .eps_improvement import apply as apply_eps
-from .monthly_revenue import apply as apply_monthly_revenue
 
 
 def supports_revenue_acceleration(financial):
@@ -13,8 +14,47 @@ def supports_revenue_acceleration(financial):
     return bool(rows) and all("revenue_yoy_prev_3m" in row for row in rows)
 
 
-def recommendations(day, sessions, prices, institutions, financial, *, test_run_id=None,
+def recommendations(day, sessions, prices, institutions, universe_or_financial, *, test_run_id=None,
                     late_financial_date=None):
+    """Build production/test recommendations using the 4-indicator Scheme B (Top 10) strategy."""
+    if late_financial_date and test_run_id:
+        raise SourceError("Formal catch-up cannot be combined with a test run")
+    used_sessions = sorted({s for s in sessions if s <= day})[-MIN_HISTORY_SESSIONS:]
+    used_prices = [r for r in prices if r["date"] in used_sessions]
+    used_institutions = [r for r in institutions if r["date"] in used_sessions]
+    if isinstance(universe_or_financial, dict):
+        universe = universe_or_financial.get("universe", [])
+        observed = universe_or_financial.get("observed_date", day)
+    else:
+        universe = list(universe_or_financial or [])
+        observed = day
+    if not universe:
+        raise SourceError("Official company universe missing")
+    result = screen_four_indicators(day, used_sessions, universe, used_prices, used_institutions)
+    result["strategy_version"] = STRATEGY_VERSION
+    result["data_hash"] = digest({"prices": used_prices, "institutions": used_institutions,
+                                  "universe": universe})
+    prefix = f"test:{test_run_id}:" if test_run_id else ""
+    result["signals"] = [
+        {
+            "signal_id": f"{prefix}{STRATEGY_VERSION}:{day}:{r['market']}:{r['symbol']}",
+            "date": day,
+            "rank": i,
+            "strategy_version": STRATEGY_VERSION,
+            **r,
+            **({"test_only": True, "excluded_from_performance": True} if test_run_id else {}),
+        }
+        for i, r in enumerate(result["candidates"], 1)
+    ]
+    result["universe_observed_date"] = observed
+    if test_run_id:
+        result.update(test_only=True, excluded_from_performance=True, test_run_id=test_run_id)
+    return result
+
+
+def recommendations_v8(day, sessions, prices, institutions, financial, *, test_run_id=None,
+                       late_financial_date=None):
+    """Legacy v8 (C5 + EPS + monthly revenue + Top 20) recommendation builder preserved for research/audit."""
     used_sessions = sorted({s for s in sessions if s <= day})[-MIN_HISTORY_SESSIONS:]
     used_prices = [r for r in prices if r["date"] in used_sessions]
     used_institutions = [r for r in institutions if r["date"] in used_sessions]
@@ -34,21 +74,20 @@ def recommendations(day, sessions, prices, institutions, financial, *, test_run_
         if not any(_float(r.get("revenue_yoy_3m")) is not None
                    and _float(r.get("revenue_yoy_prev_3m")) is not None for r in rows):
             raise SourceError(f"{market} financial source has no usable revenue acceleration observations")
-    # Only tests or the expiring approved catch-up can use a later observation cutoff.
     financial_cutoff = max(day, observed) if test_run_id or late_financial_date else day
     result = screen(day, used_sessions, financial["universe"], used_prices,
                     financial["fundamentals"], used_institutions,
                     fundamental_as_of=financial_cutoff, candidate_limit=None)
     result = apply_eps(result, financial, financial_cutoff, candidate_limit=None)
     result = apply_monthly_revenue(result, financial_cutoff)
-    result["strategy_version"] = STRATEGY_VERSION
+    result["strategy_version"] = LEGACY_V8_STRATEGY_VERSION
     result["data_hash"] = digest({"prices": used_prices, "institutions": used_institutions,
                                   "financial": financial})
     catchup = validate_catchup(day, late_financial_date) if late_financial_date else {}
     result.update(catchup)
     prefix = f"test:{test_run_id}:" if test_run_id else ""
-    result["signals"] = [{"signal_id": f"{prefix}{STRATEGY_VERSION}:{day}:{r['market']}:{r['symbol']}",
-                          "date": day, "rank": i, "strategy_version": STRATEGY_VERSION,
+    result["signals"] = [{"signal_id": f"{prefix}{LEGACY_V8_STRATEGY_VERSION}:{day}:{r['market']}:{r['symbol']}",
+                          "date": day, "rank": i, "strategy_version": LEGACY_V8_STRATEGY_VERSION,
                           **r, **catchup, **({"test_only": True, "excluded_from_performance": True} if test_run_id else {})}
                          for i, r in enumerate(result["candidates"], 1)]
     result["financial_observed_date"] = observed
@@ -61,7 +100,7 @@ def recommendations(day, sessions, prices, institutions, financial, *, test_run_
 
 
 def require_complete_financials(result):
-    """Block publication when unresolved financial data could change the result."""
+    """Block publication when unresolved financial data could change a legacy v8 result."""
     unknown = {"NO_AVAILABLE_FUNDAMENTAL", "EPS_UNKNOWN", "REVENUE_GROWTH_UNKNOWN", "REVENUE_ACCELERATION_UNKNOWN",
                "EPS_COMPARISON_UNKNOWN", "MONTHLY_REVENUE_COMPARISON_UNKNOWN"}
     unresolved = []

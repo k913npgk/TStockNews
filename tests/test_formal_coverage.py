@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 from tests.eps_fixture import ready
 from tests.test_engine import bars, weekdays
-from tstocknews.analysis import require_complete_financials
-from tstocknews.cli import daily, load_history
+from tstocknews.analysis import recommendations_v8, require_complete_financials
+from tstocknews.cli import load_history
+from tstocknews.eps_archive import restore_archived_eps
 from tstocknews.official import SourceError
+from tstocknews.report import render
 from tstocknews.storage import read, write
 
 
@@ -22,28 +24,23 @@ class FormalCoverageTests(unittest.TestCase):
         financial = {"observed_date": day, "universe": [company], "fundamentals": [current]}
 
         with tempfile.TemporaryDirectory() as tmp:
-            root, reports = Path(tmp) / "data", Path(tmp) / "reports"
-            for price in bars(sessions=sessions):
-                ds = price["date"]
-                write(root / "days" / f"{ds}.json.gz", {"date": ds, "prices": [price],
-                      "institutional": [{**company, "date": ds, "net_buy_shares": 10000}]})
+            root = Path(tmp) / "data"
+            prices = bars(sessions=sessions)
+            inst = [{**company, "date": p["date"], "net_buy_shares": 10000} for p in prices]
             path = root / "financials" / f"{day}.json.gz"
             write(path, financial)
             write(root / "financials" / f"{prior_day}.json.gz",
                   {"observed_date": prior_day, "fundamentals": [prior]})
 
-            def prepare_comparisons(root, target, sessions, prices, institutions, restored):
-                row = restored["fundamentals"][0]
-                self.assertEqual((row["eps"], row["fiscal_period"], row["eps_observed_date"]),
-                                 (2, "2025-Q1", prior_day))
-                self.assertEqual(row["revenue_yoy_3m"], .2)
-                return ready(restored, target=target)
-
-            with patch("tstocknews.cli.holiday_days", return_value=set()), patch("tstocknews.cli.sync"), \
-                 patch("tstocknews.cli.prepare_eps", side_effect=prepare_comparisons):
-                self.assertEqual(daily(root, reports, day)["selected"], 1)
+            restored = restore_archived_eps(financial, root, day)
+            row = restored["fundamentals"][0]
+            self.assertEqual((row["eps"], row["fiscal_period"], row["eps_observed_date"]),
+                             (2, "2025-Q1", prior_day))
+            self.assertEqual(row["revenue_yoy_3m"], .2)
+            result = recommendations_v8(day, sessions, prices, inst, ready(restored, target=day))
+            self.assertEqual(len(result["candidates"]), 1)
             self.assertEqual(read(path), financial)
-            self.assertIn("EPS 沿用已封存財報：1 檔", (reports / f"{day}.md").read_text(encoding="utf-8"))
+            self.assertIn("EPS 沿用已封存財報：1 檔", render(day, result, [], result["strategy_version"]))
 
     def test_only_decision_relevant_unknowns_block_publication(self):
         row = {"reasons": ["EPS_UNKNOWN", "MACD_GATE_FAILED"]}

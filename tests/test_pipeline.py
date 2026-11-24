@@ -210,7 +210,8 @@ class PipelineTests(unittest.TestCase):
                 self.assertTrue(all(row["status"] == "PENDING_ENTRY" for row in outcomes))
                 self.assertIn("① Test（2330）\n當日漲跌幅：資料未提供\n", text)
                 self.assertNotIn("近 3 日法人買超占成交量", text)
-                self.assertAlmostEqual(original["candidates"][0]["institutional_buy_volume_ratio"], .004)
+                self.assertAlmostEqual(original["candidates"][0]["inst_ratio_20d"], .004)
+                self.assertAlmostEqual(original["candidates"][0]["composite_score"], 0.5)
 
     def test_weekend_does_not_fetch_or_publish(self):
         with tempfile.TemporaryDirectory() as tmp, patch("tstocknews.cli.sync") as sync:

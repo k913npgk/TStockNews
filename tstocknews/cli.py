@@ -6,15 +6,13 @@ from pathlib import Path
 import sys
 
 from . import STRATEGY_VERSION
-from .analysis import recommendations, require_complete_financials, supports_revenue_acceleration
+from .analysis import recommendations
 from .catchup import validate as validate_catchup
 from .engine import track, MIN_HISTORY_SESSIONS
 from .line import prepare, send
-from .official import Client, SourceError, dates_between, extra_closures, holiday_days, sync, today, universe_and_financials
+from .official import Client, SourceError, dates_between, extra_closures, holiday_days, sync, today, universe_snapshot
 from .report import render
 from .storage import digest, read, write
-from .eps_archive import restore_archived_eps
-from .eps_improvement import prepare as prepare_eps
 
 
 def load_history(root, through=None):
@@ -84,30 +82,19 @@ def daily(root, report_root, day, *, late_financial_date=None):
     if result and (result.get("test_only") or result.get("excluded_from_performance")):
         raise ValueError("Test recommendations cannot be reused by the production pipeline")
     if result is None:
-        financial_day = late_financial_date or day
-        snapshot_path = root / "financials" / (financial_day + ".json.gz")
-        financial = read(snapshot_path)
-        if financial is None:
-            financial = universe_and_financials(client, financial_day)
-            write(snapshot_path, financial)
-        if not supports_revenue_acceleration(financial):
-            # Preserve the old snapshot. Newly observed data can only upgrade today's inputs.
-            upgraded_path = root / "financials" / (financial_day + "-c5.json.gz")
-            financial = read(upgraded_path)
-            if financial is None:
-                if financial_day != today().isoformat():
-                    raise SourceError("Historical financial snapshot lacks C5 revenue windows; cannot backfill publication time")
-                financial = universe_and_financials(client, financial_day)
-                write(upgraded_path, financial)
-        if financial.get("observed_date") != financial_day:
-            raise SourceError("Financial snapshot filename/observation date mismatch")
-        financial = restore_archived_eps(financial, root, financial_day)
-        financial = prepare_eps(root, day, sessions, prices, institutions, financial)
-        result = recommendations(day, sessions, prices, institutions, financial,
-                                 late_financial_date=late_financial_date)
-        if late_financial_date:
-            validate_catchup(day, late_financial_date)
-        require_complete_financials(result)
+        universe_path = root / "universe" / (day + ".json.gz")
+        universe_doc = read(universe_path)
+        if universe_doc is None:
+            legacy_financial = read(root / "financials" / (day + ".json.gz"))
+            if legacy_financial and legacy_financial.get("universe"):
+                universe_doc = {"observed_date": legacy_financial.get("observed_date", day),
+                                "universe": legacy_financial["universe"]}
+            else:
+                universe_doc = universe_snapshot(client, day)
+                write(universe_path, universe_doc)
+        if universe_doc.get("observed_date", day) != day:
+            raise SourceError("Universe snapshot filename/observation date mismatch")
+        result = recommendations(day, sessions, prices, institutions, universe_doc)
         write(result_path, result)
     signals = []
     for path in sorted((root / "recommendations").glob("*.json")):

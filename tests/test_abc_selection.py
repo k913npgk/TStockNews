@@ -10,7 +10,7 @@ from tests.test_engine import bars, weekdays
 from tstocknews import abc_selection as abc
 from tstocknews import engine
 from tstocknews import eps_improvement
-from tstocknews.analysis import recommendations
+from tstocknews.analysis import recommendations_v8 as recommendations
 from tstocknews.official import SourceError
 
 

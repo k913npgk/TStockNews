@@ -10,8 +10,9 @@ from tests.test_engine import bars, weekdays
 from tests.eps_fixture import ready
 from tstocknews.cli import main, daily
 from tstocknews.engine import track
-from tstocknews.analysis import recommendations
-from tstocknews.preview import enrich_daily_changes, preview, target_session, restore_archived_eps
+from tstocknews.eps_archive import restore_archived_eps
+from tstocknews.analysis import recommendations, recommendations_v8
+from tstocknews.preview import enrich_daily_changes, preview, target_session
 from tstocknews.storage import read, write
 
 
@@ -44,58 +45,6 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(len(got['archived_eps_restored']), 1)
             self.assertEqual(files(source), before)
             self.assertEqual(fresh, original)
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_unknown_eps_for_otherwise_eligible_issuer_cannot_be_zero_picks(self, calendar):
-        from tstocknews.official import SourceError
-        with tempfile.TemporaryDirectory() as tmp:
-            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
-            day = self.seed(source)
-            fresh = read(source / 'financials' / (day + '.json.gz'))
-            fresh['observed_date'] = '2026-11-01'
-            fresh['fundamentals'][0].update(eps=None, fiscal_period='2026-Q3', available_date='2026-11-01')
-            # Keep another valid issuer so the market-wide source guard passes;
-            # this case tests a partial outage affecting an otherwise eligible issuer.
-            fresh['universe'].append({'market': 'twse', 'symbol': '9999', 'name': 'Other'})
-            fresh['fundamentals'].append({**fresh['fundamentals'][0], 'symbol': '9999', 'eps': 1})
-            with patch('tstocknews.preview.today', return_value=date(2026, 11, 1)), \
-                 patch('tstocknews.preview.universe_and_financials', return_value=fresh), \
-                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: args[-1]):
-                with self.assertRaisesRegex(SourceError, 'Unresolved financial data.*2330.*EPS_UNKNOWN'):
-                    preview(source, runs, 'unknown-eps', day, runtime_financials=True)
-            self.assertFalse((runs / 'unknown-eps/reports' / (day + '.md')).exists())
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_reuse_raw_runtime_snapshot_repairs_eps_without_recollecting_financials(self, calendar):
-        from copy import deepcopy
-        from tstocknews.official import SourceError
-        with tempfile.TemporaryDirectory() as tmp:
-            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
-            day = self.seed(source)
-            fresh = read(source / 'financials' / (day + '.json.gz'))
-            fresh['observed_date'] = '2026-11-01'
-            fresh.pop('eps_comparison_schema_version')
-            fresh['fundamentals'][0].update(eps=None, fiscal_period='', available_date='2026-11-01')
-            write(runs / 'prior/manifest.json', {'runtime_financials': True, 'test_only': True,
-                  'excluded_from_performance': True, 'financial_observed_date': '2026-11-01'})
-            write(runs / 'prior/data/financials/2026-11-01.json.gz', fresh)
-            before = files(source)
-            with patch('tstocknews.preview.today', return_value=date(2026, 11, 1)), \
-                 patch('tstocknews.preview.universe_and_financials', side_effect=AssertionError('no recollection')), \
-                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
-                got = preview(source, runs, 'repaired', day, runtime_financials=True, runtime_source_run_id='prior')
-            self.assertEqual(got['selected'], 1)
-            self.assertEqual(len(got['archived_eps_restored']), 1)
-            self.assertEqual(files(source), before)
-            text = (runs / 'repaired/reports' / (day + '.md')).read_text(encoding='utf-8')
-            self.assertIn('EPS 缺值補足：1 檔', text)
-            with self.assertRaisesRegex(ValueError, 'runtime source run'):
-                preview(source, runs, 'repaired', day, runtime_financials=True)
-            with patch('tstocknews.preview.today', return_value=date(2026, 11, 2)):
-                with self.assertRaisesRegex(SourceError, 'not observed today'):
-                    preview(source, runs, 'stale', day, runtime_financials=True, runtime_source_run_id='prior')
-            with self.assertRaises(ValueError):
-                preview(source, runs, 'escape', day, runtime_financials=True, runtime_source_run_id='../prior')
 
     def test_legacy_quote_enrichment_uses_official_target_day_and_keeps_source_immutable(self):
         from tstocknews.official import SourceError
@@ -196,121 +145,25 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(preview(source, runs, 'run-2', day)['selected'], 1)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_missing_historical_snapshot_uses_runtime_financials_with_true_dates(self, calendar):
+    def test_missing_historical_universe_fetches_current_universe(self, calendar):
         with tempfile.TemporaryDirectory() as tmp:
             source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
             day = self.seed(source, financial=False)
-            write(source / 'financials' / '2026-10-03.json.gz', {'observed_date': '2026-10-03'})
             before = files(source)
-            runtime = ready({'observed_date': '2026-10-03', 'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}],
-                       'fundamentals': [{'symbol': '2330', 'market': 'twse', 'eps': 1, 'revenue_yoy_3m': .2,
-                                         'revenue_yoy_prev_3m': .1,
-                                         'available_date': '2026-10-03', 'fiscal_period': '2026-Q2'}]}, target=day)
+            runtime = {'observed_date': '2026-10-03',
+                       'universe': [{'symbol': '2330', 'market': 'twse', 'name': 'Test'}]}
             with patch('tstocknews.preview.today', return_value=date(2026, 10, 3)), \
-                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch:
+                 patch('tstocknews.preview.universe_snapshot', return_value=runtime) as fetch:
                 result = preview(source, runs, 'missing', day)
             fetch.assert_called_once()
             self.assertEqual(fetch.call_args.args[1], '2026-10-03')
             self.assertEqual(result['analysis_status'], 'COMPLETE')
             self.assertEqual(result['selected'], 1)
-            self.assertTrue(result['late_financial_snapshot'])
             self.assertEqual(files(source), before)
-            saved = read(runs / 'missing/data/recommendations' / (day + '.json'))
-            self.assertEqual(saved['candidates'][0]['fundamental_available_date'], '2026-10-03')
-            self.assertEqual(saved['diagnostics']['fundamental_as_of'], '2026-10-03')
-            self.assertEqual(read(runs / 'missing/data/financials/2026-10-03.json.gz'), runtime)
+            self.assertEqual(read(runs / 'missing/data/universe/2026-10-03.json.gz'), runtime)
             self.assertFalse((runs / 'missing/data/performance').exists())
             text = (runs / 'missing/reports' / (day + '.md')).read_text(encoding='utf-8')
-            self.assertIn('不是目標日當時資訊的歷史重現', text)
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_runtime_mode_reuses_formal_raw_snapshot_observed_today(self, calendar):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
-            day = self.seed(source)
-            observed = '2026-10-30'
-            snapshot = read(source / 'financials' / (day + '.json.gz'))
-            snapshot['observed_date'] = observed
-            for row in snapshot['fundamentals']:
-                row['available_date'] = observed
-            write(source / 'financials' / (observed + '.json.gz'), snapshot)
-            before = files(source)
-            with patch('tstocknews.preview.today', return_value=date.fromisoformat(observed)), \
-                 patch('tstocknews.preview.universe_and_financials') as fetch, \
-                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
-                result = preview(source, runs, 'same-day-observation', day, runtime_financials=True)
-            fetch.assert_not_called()
-            self.assertEqual(result['financial_observed_date'], observed)
-            self.assertTrue(result['late_financial_snapshot'])
-            self.assertEqual(files(source), before)
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_runtime_override_bypasses_archived_financials_and_pins_resume_mode(self, calendar):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
-            day = self.seed(source)
-            before = files(source)
-            runtime = read(source / 'financials' / (day + '.json.gz'))
-            runtime['observed_date'] = '2026-10-30'
-            runtime['fundamentals'][0]['available_date'] = '2026-10-30'
-            with patch('tstocknews.preview.today', return_value=date(2026, 10, 30)), \
-                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch, \
-                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
-                result = preview(source, runs, 'runtime', day, runtime_financials=True)
-            fetch.assert_called_once()
-            self.assertEqual(fetch.call_args.args[1], '2026-10-30')
-            self.assertEqual(result['financial_observed_date'], '2026-10-30')
-            self.assertTrue(result['runtime_financials'])
-            self.assertTrue(result['late_financial_snapshot'])
-            self.assertEqual(files(source), before)
-            self.assertFalse((runs / 'runtime/data/performance').exists())
-            text = (runs / 'runtime/reports' / (day + '.md')).read_text(encoding='utf-8')
-            self.assertIn('財報／營收快照取得日：2026-10-30', text)
-            self.assertIn('不是目標日當時資訊的歷史重現', text)
-            with patch('tstocknews.preview.universe_and_financials', side_effect=AssertionError('reuse')):
-                self.assertEqual(preview(source, runs, 'runtime', day, runtime_financials=True), result)
-            with self.assertRaisesRegex(ValueError, 'financial source mode'):
-                preview(source, runs, 'runtime', day)
-            with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
-                main(['daily', '--runtime-financials'])
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_old_snapshot_without_c5_uses_isolated_runtime_snapshot(self, calendar):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
-            day = self.seed(source)
-            path = source / 'financials' / (day + '.json.gz')
-            old = read(path)
-            old['fundamentals'][0].pop('revenue_yoy_prev_3m')
-            write(path, old)
-            before = files(source)
-            runtime = {**old, 'observed_date': '2026-10-29',
-                       'fundamentals': [{**old['fundamentals'][0], 'revenue_yoy_prev_3m': .1,
-                                         'available_date': '2026-10-29'}]}
-            with patch('tstocknews.preview.today', return_value=date(2026, 10, 29)), \
-                 patch('tstocknews.preview.universe_and_financials', return_value=runtime) as fetch, \
-                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
-                result = preview(source, runs, 'c5-upgrade', day)
-            fetch.assert_called_once()
-            self.assertEqual(result['selected'], 1)
-            self.assertEqual(result['financial_observed_date'], '2026-10-29')
-            self.assertEqual(files(source), before)
-
-    @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_future_dated_financial_row_fails_without_production_write(self, calendar):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / 'production'
-            day = self.seed(source)
-            path = source / 'financials' / (day + '.json.gz')
-            financial = read(path)
-            financial['fundamentals'][0]['available_date'] = '2027-01-01'
-            write(path, financial)
-            before = files(source)
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                code = main(['--data-dir', str(source), 'test-report', '--date', day,
-                             '--run-id', 'bad', '--test-dir', str(Path(tmp) / 'tests')])
-            self.assertEqual(code, 1)
-            self.assertEqual(files(source), before)
+            self.assertIn('普通股清單取得日：2026-10-03', text)
 
     def test_paths_and_ids_cannot_escape_into_production(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -381,13 +234,13 @@ class PreviewTests(unittest.TestCase):
                     self.assertEqual(main(['--data-dir', tmp, 'daily', '--require-report']), expected)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
-    def test_financial_source_failure_cannot_be_reported_as_success(self, calendar):
+    def test_universe_source_failure_cannot_be_reported_as_success(self, calendar):
         from tstocknews.official import SourceError
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'source'
             day = self.seed(source, financial=False)
             before = files(source)
-            with patch('tstocknews.preview.universe_and_financials', side_effect=SourceError('source unavailable')):
+            with patch('tstocknews.preview.universe_snapshot', side_effect=SourceError('source unavailable')):
                 with self.assertRaises(SourceError):
                     preview(source, Path(tmp) / 'tests', 'failed', day)
             self.assertEqual(files(source), before)
@@ -410,7 +263,7 @@ class PreviewTests(unittest.TestCase):
                      'fundamentals': [{'market': 'twse', 'symbol': '2330', 'eps': 1, 'revenue_yoy_3m': .2,
                                        'available_date': '2026-10-03'}]}
         with self.assertRaisesRegex(SourceError, 'Production cannot use'):
-            recommendations(day, sessions, bars(sessions=sessions), [], financial)
+            recommendations_v8(day, sessions, bars(sessions=sessions), [], financial)
 
     def test_complete_financial_source_loss_is_not_zero_qualified_stocks(self):
         from tstocknews.official import SourceError
@@ -419,4 +272,4 @@ class PreviewTests(unittest.TestCase):
                      'fundamentals': [{'market': 'twse', 'symbol': '2330', 'eps': None,
                                        'revenue_yoy_3m': None, 'available_date': sessions[-1]}]}
         with self.assertRaisesRegex(SourceError, 'no usable EPS or revenue'):
-            recommendations(sessions[-1], sessions, bars(sessions=sessions), [], financial)
+            recommendations_v8(sessions[-1], sessions, bars(sessions=sessions), [], financial)
