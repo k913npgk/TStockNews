@@ -204,7 +204,7 @@ jobs:
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.runtime_financials && 15 || 5 }}
+    timeout-minutes: ${{ inputs.runtime_financials && 55 || 5 }}
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       TEST_ID: ${{ inputs.resume_test_run_id || github.run_id }}
@@ -229,6 +229,7 @@ jobs:
           fi
       - name: Generate isolated report
         id: preview
+        timeout-minutes: ${{ inputs.runtime_financials && 50 || 5 }}
         env:
           INPUT_DATE: ${{ inputs.date }}
           GH_TOKEN: ${{ github.token }}
@@ -268,9 +269,10 @@ jobs:
           LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
           TARGET_DATE: ${{ steps.preview.outputs.target }}
         run: python -B -m tstocknews --data-dir "test-runs/$TEST_ID/data" --report-dir "test-runs/$TEST_ID/reports" send --date "$TARGET_DATE" --require-sent
-      - name: Persist test delivery result
-        if: always() && steps.preview.outcome == 'success'
-        run: bash scripts/persist-tests.sh
+      - name: Persist isolated checkpoint or delivery result
+        if: ${{ !cancelled() && (steps.preview.outcome == 'success' || steps.preview.outcome == 'failure') }}
+        run: |
+          if [ -d "test-runs/$TEST_ID" ]; then bash scripts/persist-tests.sh; fi
       - name: Test summary
         if: always()
         run: |

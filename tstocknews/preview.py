@@ -148,7 +148,14 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False, runtim
             if not financial or financial.get('observed_date') != today().isoformat():
                 raise SourceError('Runtime source snapshot is not observed today')
         else:
-            financial = universe_and_financials(Client(data), today().isoformat())
+            observed_today = today().isoformat()
+            if runtime_financials:
+                relative = Path("financials") / (observed_today + ".json.gz")
+                financial = read(data / relative) or read(source / relative)
+                if financial and financial.get("observed_date") != observed_today:
+                    raise SourceError("Financial snapshot filename/observation date mismatch")
+            if not financial or not supports_revenue_acceleration(financial):
+                financial = universe_and_financials(Client(data), observed_today)
     if runtime_financials:
         financial = restore_archived_eps(financial, source, target)
     observed = financial.get("observed_date", target)

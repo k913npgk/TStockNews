@@ -224,6 +224,27 @@ class PreviewTests(unittest.TestCase):
             self.assertIn('不是目標日當時資訊的歷史重現', text)
 
     @patch('tstocknews.preview.holiday_days', return_value=set())
+    def test_runtime_mode_reuses_formal_raw_snapshot_observed_today(self, calendar):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
+            day = self.seed(source)
+            observed = '2026-10-30'
+            snapshot = read(source / 'financials' / (day + '.json.gz'))
+            snapshot['observed_date'] = observed
+            for row in snapshot['fundamentals']:
+                row['available_date'] = observed
+            write(source / 'financials' / (observed + '.json.gz'), snapshot)
+            before = files(source)
+            with patch('tstocknews.preview.today', return_value=date.fromisoformat(observed)), \
+                 patch('tstocknews.preview.universe_and_financials') as fetch, \
+                 patch('tstocknews.preview.prepare_eps', side_effect=lambda *args: ready(args[-1], target=args[1])):
+                result = preview(source, runs, 'same-day-observation', day, runtime_financials=True)
+            fetch.assert_not_called()
+            self.assertEqual(result['financial_observed_date'], observed)
+            self.assertTrue(result['late_financial_snapshot'])
+            self.assertEqual(files(source), before)
+
+    @patch('tstocknews.preview.holiday_days', return_value=set())
     def test_runtime_override_bypasses_archived_financials_and_pins_resume_mode(self, calendar):
         with tempfile.TemporaryDirectory() as tmp:
             source, runs = Path(tmp) / 'production', Path(tmp) / 'tests'
