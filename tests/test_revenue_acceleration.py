@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from tests.test_engine import bars, weekdays
 from tests.eps_fixture import ready
-from tstocknews import STRATEGY_VERSION
-from tstocknews.analysis import recommendations
+from tstocknews import LEGACY_V8_STRATEGY_VERSION as STRATEGY_VERSION
+from tstocknews.analysis import recommendations_v8 as recommendations
 from tstocknews.cli import daily
 from tstocknews.engine import screen
 from tstocknews.official import SourceError, month_offset, revenue_windows, universe_and_financials
@@ -194,34 +194,17 @@ class ProductionC5Tests(unittest.TestCase):
                 write(root / "days" / (px["date"] + ".json.gz"),
                       {"date": px["date"], "prices": [px], "institutional": [
                           {**self.company, "date": px["date"], "net_buy_shares": 1000}]})
-            old = {"observed_date": self.day, "universe": [self.company],
-                   "fundamentals": [{k: v for k, v in self.fund.items() if k != "revenue_yoy_prev_3m"}]}
-            path = root / "financials" / (self.day + ".json.gz")
-            write(path, old)
-            before = path.read_bytes()
-            upgraded = {**old, "fundamentals": [self.fund]}
+            write(root / "universe" / (self.day + ".json.gz"),
+                  {"observed_date": self.day, "universe": [self.company]})
             with patch("tstocknews.cli.today", return_value=date.fromisoformat(self.day)), \
                  patch("tstocknews.cli.holiday_days", return_value=set()), patch("tstocknews.cli.sync"), \
-                 patch("tstocknews.cli.universe_and_financials", return_value=upgraded) as fetch, \
-                 patch("tstocknews.cli.prepare_eps", side_effect=lambda *args: ready(args[-1], target=args[1])):
+                 patch("tstocknews.cli.universe_snapshot") as fetch:
                 self.assertEqual(daily(root, reports, self.day)["selected"], 1)
-                fetch.assert_called_once()
-                self.assertEqual(path.read_bytes(), before)
-                self.assertEqual(read(root / "financials" / (self.day + "-c5.json.gz")), upgraded)
-                # A crash after saving today's upgraded inputs can resume on a later day.
-                result_path = root / "recommendations" / (self.day + ".json")
-                expected = read(result_path)
-                result_path.unlink()
-                fetch.reset_mock()
-                with patch("tstocknews.cli.today", return_value=date(2026, 10, 29)):
-                    self.assertEqual(daily(root, reports, self.day)["selected"], 1)
-                self.assertEqual(read(result_path), expected)
                 fetch.assert_not_called()
                 result_path = root / "recommendations" / (self.day + ".json")
                 archived = read(result_path)
                 archived["strategy_version"] = "rules-v5-institutional-net-buy-top20"
                 write(result_path, archived)
-                fetch.reset_mock()
                 self.assertEqual(daily(root, reports, self.day)["strategy_version"], archived["strategy_version"])
                 self.assertEqual(read(result_path), archived)
                 fetch.assert_not_called()

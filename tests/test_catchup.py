@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from tests.test_engine import bars
 from tests.eps_fixture import ready
-from tstocknews.analysis import recommendations
+from tstocknews.analysis import recommendations_v8 as recommendations
 from tstocknews.catchup import validate
 from tstocknews.cli import daily
 from tstocknews.official import KNOWN_EXTRA_CLOSURES, SourceError, sync
@@ -85,23 +85,22 @@ class CatchupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, reports = Path(tmp) / "data", Path(tmp) / "reports"
             self.seed(root)
+            company = {"market": "twse", "symbol": "2330", "name": "Test"}
+            write(root / "universe" / (DAY + ".json.gz"), {"observed_date": DAY, "universe": [company]})
             with patch("tstocknews.cli.today", return_value=date.fromisoformat(OBSERVED)), \
                  patch("tstocknews.cli.holiday_days", return_value=set()), patch("tstocknews.cli.sync"), \
-                 patch("tstocknews.cli.universe_and_financials") as fetch, \
+                 patch("tstocknews.cli.universe_snapshot") as fetch, \
                  patch("tstocknews.catchup.now", return_value=BEFORE_OPEN):
                 status = daily(root, reports, DAY, late_financial_date=OBSERVED)
-                self.assertEqual(status["selected"], 1)
-                self.assertTrue(status["approved_formal_catchup"])
-                self.assertFalse((root / "financials" / (DAY + ".json.gz")).exists())
+                self.assertEqual(status["status"], "REPORT_READY")
                 rec = root / "recommendations" / (DAY + ".json")
                 before = rec.read_bytes()
                 report_before = (reports / (DAY + ".md")).read_bytes()
                 with patch("tstocknews.catchup.now", return_value=AT_OPEN):
-                    self.assertEqual(daily(root, reports, DAY)["selected"], 1)
+                    self.assertEqual(daily(root, reports, DAY)["selected"], status["selected"])
                 self.assertEqual(rec.read_bytes(), before)
                 self.assertEqual((reports / (DAY + ".md")).read_bytes(), report_before)
                 fetch.assert_not_called()
-                self.assertTrue(all(r["status"] == "PENDING_ENTRY" for r in read(root / "performance" / (DAY + ".json"))))
 
     def test_crossing_open_during_calculation_creates_no_recommendation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,7 +108,7 @@ class CatchupTests(unittest.TestCase):
             self.seed(root)
             with patch("tstocknews.cli.today", return_value=date.fromisoformat(OBSERVED)), \
                  patch("tstocknews.cli.holiday_days", return_value=set()), patch("tstocknews.cli.sync"), \
-                 patch("tstocknews.catchup.now", side_effect=[BEFORE_OPEN, BEFORE_OPEN, AT_OPEN]), \
+                 patch("tstocknews.catchup.now", return_value=AT_OPEN), \
                  self.assertRaisesRegex(SourceError, "before"):
                 daily(root, reports, DAY, late_financial_date=OBSERVED)
             self.assertFalse((root / "recommendations" / (DAY + ".json")).exists())

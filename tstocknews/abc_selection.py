@@ -8,7 +8,7 @@ from datetime import date
 import math
 
 from . import engine
-from .analysis import recommendations
+from .analysis import recommendations_v8 as recommendations
 from .eps_improvement import apply as apply_eps
 from .monthly_revenue import apply as apply_monthly
 from .official import SourceError

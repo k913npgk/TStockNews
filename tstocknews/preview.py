@@ -6,13 +6,11 @@ import re
 import shutil
 
 from . import STRATEGY_VERSION
-from .analysis import recommendations, require_complete_financials, supports_revenue_acceleration
+from .analysis import recommendations
 from .engine import MIN_HISTORY_SESSIONS
-from .official import Client, SourceError, extra_closures, holiday_days, quote_rows, sync, today, universe_and_financials
+from .official import Client, SourceError, extra_closures, holiday_days, quote_rows, sync, today, universe_snapshot
 from .report import render
 from .storage import digest, read, write
-from .eps_improvement import prepare as prepare_eps
-from .eps_archive import restore_archived_eps
 
 
 def target_session(root, requested):
@@ -120,45 +118,25 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False, runtim
         if current.weekday() < 5 and ds not in calendars[current.year] and ds not in closures and ds not in sessions:
             raise SourceError(f"Missing expected warm-up session {ds}; resume bootstrap first")
         current += timedelta(days=1)
-    # Prefer the archived target-day inputs; runtime financials are allowed for tests.
-    financial = None
-    for path in ([] if runtime_financials else sorted((source / "financials").glob("*.json.gz"), reverse=True)):
-        if path.name[:10] > target:
-            continue
-        value = read(path)
-        if value.get("observed_date", path.name[:10]) <= target:
-            if value.get("observed_date", path.name[:10]) != path.name[:10]:
-                raise SourceError("Financial snapshot filename/observation date mismatch")
-            if not supports_revenue_acceleration(value):
-                continue
-            financial = value
+    # Prefer the archived target-day ordinary-share universe; otherwise observe today's universe.
+    universe_doc = None
+    for folder in ("universe", "financials"):
+        if universe_doc is not None:
             break
-    if financial is None:
-        if runtime_source_run_id:
-            saved_root = runs / runtime_source_run_id
-            if saved_root.is_symlink() or any(p.is_symlink() for p in saved_root.rglob('*')):
-                raise ValueError('Symlinks are not allowed in runtime source runs')
-            prior_manifest = read(saved_root / 'manifest.json')
-            if (not prior_manifest or not prior_manifest.get('runtime_financials')
-                    or not prior_manifest.get('test_only') or not prior_manifest.get('excluded_from_performance')):
-                raise SourceError('Runtime source run is missing or not a runtime financial snapshot')
-            if prior_manifest.get('financial_observed_date') != today().isoformat():
-                raise SourceError('Runtime source snapshot is not observed today')
-            financial = read(saved_root / 'data' / 'financials' / (today().isoformat() + '.json.gz'))
-            if not financial or financial.get('observed_date') != today().isoformat():
-                raise SourceError('Runtime source snapshot is not observed today')
-        else:
-            observed_today = today().isoformat()
-            if runtime_financials:
-                relative = Path("financials") / (observed_today + ".json.gz")
-                financial = read(data / relative) or read(source / relative)
-                if financial and financial.get("observed_date") != observed_today:
-                    raise SourceError("Financial snapshot filename/observation date mismatch")
-            if not financial or not supports_revenue_acceleration(financial):
-                financial = universe_and_financials(Client(data), observed_today)
-    if runtime_financials:
-        financial = restore_archived_eps(financial, source, target)
-    observed = financial.get("observed_date", target)
+        for path in sorted((source / folder).glob("*.json.gz"), reverse=True):
+            if path.name[:10] > target:
+                continue
+            value = read(path)
+            if value and value.get("universe") and value.get("observed_date", path.name[:10]) <= target:
+                if value.get("observed_date", path.name[:10]) != path.name[:10]:
+                    raise SourceError("Universe snapshot filename/observation date mismatch")
+                universe_doc = {"observed_date": value.get("observed_date", path.name[:10]),
+                                "universe": value["universe"]}
+                break
+    if universe_doc is None:
+        observed_today = today().isoformat()
+        universe_doc = universe_snapshot(Client(data), observed_today)
+    observed = universe_doc.get("observed_date", target)
     upcoming = date.fromisoformat(target) + timedelta(days=1)
     for _ in range(370):
         if upcoming.year not in calendars:
@@ -172,25 +150,17 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False, runtim
     warnings = []
     if len(sessions) < MIN_HISTORY_SESSIONS:
         warnings.append("WARMUP_REQUIRED")
-    if financial is None:
-        warnings.append("HISTORICAL_FINANCIAL_SNAPSHOT_MISSING")
-    elif observed > today().isoformat() or not financial.get("fundamentals") or any(not row.get("available_date") or row["available_date"] > observed for row in financial["fundamentals"]):
-        raise SourceError("Financial snapshot contains unavailable or future observations")
+    if observed > today().isoformat() or not universe_doc.get("universe"):
+        raise SourceError("Universe snapshot contains unavailable or future observations")
     result = None
     if not warnings:
-        write(data / "financials" / (observed + ".json.gz"), financial)
-        financial = prepare_eps(data, target, sessions, prices, institutions, financial)
-        result = recommendations(target, sessions, prices, institutions, financial, test_run_id=run_id)
-        require_complete_financials(result)
+        write(data / "universe" / (observed + ".json.gz"), universe_doc)
+        result = recommendations(target, sessions, prices, institutions, universe_doc, test_run_id=run_id)
         write(data / "recommendations" / (target + ".json"), result)
         write(root / "screen.json", result)
     header = ["【測試報告｜不計入績效】", f"執行指定日：{requested}",
-              f"行情／法人截至：{target}", f"財報／營收快照取得日：{observed}",
-              f"下一交易日：{next_day}",
-              *([f"EPS 缺值補足：{len(financial['archived_eps_restored'])} 檔；封存取得日："
-                 + '、'.join(sorted({r['observed_date'] for r in financial['archived_eps_restored']}))]
-                if financial.get('archived_eps_restored') else []),
-              *( ["本次使用較晚取得的財報，", "不是目標日當時資訊的歷史重現。"] if observed > target else []), ""]
+              f"行情／法人截至：{target}", f"普通股清單取得日：{observed}",
+              f"下一交易日：{next_day}", ""]
     if result is not None:
         body = render(target, result, [], STRATEGY_VERSION, include_performance=False)
     else:
@@ -199,8 +169,7 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False, runtim
                 "符合檔數未知，不代表沒有股票符合條件。\n"
                 f"已準備 {len(sessions)}／{MIN_HISTORY_SESSIONS} 個交易日資料。\n"
                 f"上市行情：{sum(r['market'] == 'twse' for r in target_prices)} 檔\n"
-                f"上櫃行情：{sum(r['market'] == 'tpex' for r in target_prices)} 檔\n"
-                + ("缺少可用的財報與營收資料。\n" if financial is None else ""))
+                f"上櫃行情：{sum(r['market'] == 'tpex' for r in target_prices)} 檔\n")
     text = "\n".join(header) + body
     reports = root / "reports"
     reports.mkdir(parents=True, exist_ok=True)
@@ -209,18 +178,13 @@ def preview(source, runs, run_id, requested, *, runtime_financials=False, runtim
                 "test_only": True, "excluded_from_performance": True,
                 "status": "TEST_REPORT_READY", "analysis_status": "COMPLETE" if result is not None else "INCOMPLETE",
                 "warnings": warnings, "selected": len(result["candidates"]) if result is not None else None,
-                "financial_observed_date": observed, "late_financial_snapshot": observed > target,
+                "universe_observed_date": observed,
                 "runtime_financials": runtime_financials,
                 "runtime_source_run_id": runtime_source_run_id,
-                "archived_eps_restored": financial.get('archived_eps_restored', []),
                 "next_trading_day": next_day, "warmup_sessions": len(sessions),
-                "financial_coverage": {market: {"universe": sum(r["market"] == market for r in financial["universe"]),
-                    "eps": sum(r["market"] == market and r.get("eps") is not None for r in financial["fundamentals"]),
-                    "revenue": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None for r in financial["fundamentals"]),
-                    "revenue_acceleration": sum(r["market"] == market and r.get("revenue_yoy_3m") is not None
-                                                and r.get("revenue_yoy_prev_3m") is not None for r in financial["fundamentals"])}
-                    for market in ("twse", "tpex")},
+                "universe_coverage": {market: sum(r["market"] == market for r in universe_doc["universe"])
+                                      for market in ("twse", "tpex")},
                 "recommendations": str(data / "recommendations" / (target + ".json")) if result else None,
-                "report_hash": digest(text), "input_hash": digest({"prices": prices, "institutions": institutions, "financial": financial})}
+                "report_hash": digest(text), "input_hash": digest({"prices": prices, "institutions": institutions, "universe": universe_doc})}
     write(manifest_path, manifest)
     return manifest

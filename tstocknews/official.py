@@ -281,6 +281,11 @@ def ordinary_universe(client):
     return universe
 
 
+def universe_snapshot(client, as_of):
+    """Observe official listed and OTC ordinary shares without fetching financials."""
+    return {"observed_date": as_of, "universe": ordinary_universe(client), "source_audit": list(client.audit)}
+
+
 def month_offset(day, offset):
     n = day.year * 12 + day.month - 1 + offset
     return n // 12, n % 12 + 1
