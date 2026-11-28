@@ -1,8 +1,4 @@
 {
-  "date": "2026-11-27",
-  "eligible_count": 21,
-  "report": "reports/2026-11-27.md",
-  "selected": 10,
-  "status": "REPORT_READY",
-  "strategy_version": "rules-v9-four-indicator-top10"
+  "date": "2026-11-28",
+  "status": "NON_TRADING_DAY"
 }
